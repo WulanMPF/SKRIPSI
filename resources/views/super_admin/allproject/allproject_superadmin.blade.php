@@ -106,9 +106,15 @@
                             <td style="max-width: 150px; white-space: nowrap; overflow-x: auto; overflow-y: hidden;">
                                 {{ $project['total_formatted'] }}</td>
                             <td>
-                                <a href="{{ route('superadmin.allproject_detail', $project['id']) }}" title="Lihat Detail">
+                                <a href="
+                                    @if ($project['status'] === 'PROCESS') {{ route('superadmin.allproject_process_detail', $project['id']) }}
+                                    @elseif ($project['status'] === 'ACC') {{ route('superadmin.allproject_acc_detail', $project['id']) }}
+                                    @elseif ($project['status'] === 'REJECT') {{ route('superadmin.allproject_reject_detail', $project['id']) }}
+                                    @else {{ route('superadmin.allproject', $project['id']) }} @endif "
+                                    title="Lihat Detail">
                                     <img src="{{ asset('assets/detail.png') }}" alt="Detail"
                                         style="width:20px;height:20px;">
+                                </a>
                             </td>
                         </tr>
                     @endforeach
@@ -194,7 +200,6 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            // === SEMUA EVENT ADA DI SINI ===
 
             flatpickr("#date_range", {
                 mode: "range",
@@ -256,7 +261,7 @@
                 }
             });
 
-            // === SWEET ALERT KONFIRMASI SAAT KLIK SAVE ===
+            // SWEET ALERT KONFIRMASI SAAT KLIK SAVE
             saveBtn.addEventListener("click", async function(e) {
                 e.preventDefault();
                 const formData = new FormData(addProjectForm);
@@ -274,10 +279,10 @@
                     reverseButtons: true
                 }).then(async (result) => {
                     if (result.isConfirmed) {
-                        // 1️⃣ Tutup modal add project
+                        // Tutup modal add project
                         addProjectModal.style.display = "none";
 
-                        // 2️⃣ Tampilkan loading SweetAlert
+                        // Tampilkan loading SweetAlert
                         Swal.fire({
                             title: 'Sedang memproses...',
                             text: 'Mohon tunggu sebentar.',
@@ -299,14 +304,14 @@
                                 throw new Error(data.message ||
                                     "Terjadi kesalahan saat menyimpan data.");
 
-                            // 3️⃣ Tutup loading dan tampilkan alert berhasil
+                            // Tutup loading dan tampilkan alert berhasil
                             Swal.fire({
                                 icon: "success",
                                 title: "Berhasil!",
                                 text: data.message,
                                 confirmButtonColor: "#133995"
                             }).then(() => {
-                                // 4️⃣ Redirect sesuai status yang dipilih
+                                // Redirect sesuai status yang dipilih
                                 const status = formData.get("status");
                                 if (status === "PROCESS") {
                                     window.location.href =
@@ -334,6 +339,66 @@
                 });
             });
         });
+
+        // SWEETALERT UNTUK DOWNLOAD ALL PROJECT
+        const downloadAllBtn = document.querySelector('.btn-primary-custom');
+
+        if (downloadAllBtn) {
+            downloadAllBtn.addEventListener('click', async function(e) {
+                e.preventDefault();
+                const downloadUrl = this.href;
+
+                Swal.fire({
+                    title: 'Apakah Anda yakin?',
+                    text: 'Semua data project akan diunduh dalam format PDF.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#133995',
+                    cancelButtonColor: '#C8170D',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonText: 'Ya, download sekarang!',
+                    reverseButtons: true
+                }).then(async (result) => {
+                    if (result.isConfirmed) {
+                        // Loading
+                        Swal.fire({
+                            title: 'Sedang menyiapkan file...',
+                            text: 'Mohon tunggu sebentar, sistem sedang memproses data.',
+                            allowOutsideClick: false,
+                            didOpen: () => Swal.showLoading()
+                        });
+
+                        try {
+                            // Simulasi waktu proses
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+
+                            // Jalankan download
+                            const link = document.createElement('a');
+                            link.href = downloadUrl;
+                            link.download = '';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+
+                            // Sukses alert
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Berhasil!',
+                                text: 'File PDF berhasil didownload.',
+                                confirmButtonColor: '#133995'
+                            });
+                        } catch (err) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Gagal!',
+                                text: 'Terjadi kesalahan saat memulai download.',
+                                confirmButtonColor: '#C8170D'
+                            });
+                        }
+                    }
+                });
+            });
+        }
 
         const blue = '#133995';
         const lightBlue = '#4A6AC0';
@@ -526,12 +591,12 @@
 
         /* Bagian Chart */
         /* .charts-row {
-                                        margin-top: 20px;
-                                        display: grid;
-                                        grid-template-columns: 2fr 1fr;
-                                        gap: 18px;
-                                        margin-bottom: 22px;
-                                    } */
+                                                        margin-top: 20px;
+                                                        display: grid;
+                                                        grid-template-columns: 2fr 1fr;
+                                                        gap: 18px;
+                                                        margin-bottom: 22px;
+                                                    } */
 
         .charts-row {
             margin-top: 20px;
@@ -555,8 +620,8 @@
         }
 
         /* .card.left {
-                                    height: 420px;
-                                } */
+                                                    height: 420px;
+                                                } */
 
         .card.left {
             display: flex;
@@ -566,11 +631,11 @@
         }
 
         /* .right-column {
-                                display: flex;
-                                flex-direction: column;
-                                gap: 18px;
-                                height: 420px;
-                            } */
+                                                display: flex;
+                                                flex-direction: column;
+                                                gap: 18px;
+                                                height: 420px;
+                                            } */
 
         .right-column {
             display: flex;
@@ -582,9 +647,9 @@
         }
 
         /* .right-column .card {
-                            flex: 1;
-                            padding: 12px;
-                        } */
+                                            flex: 1;
+                                            padding: 12px;
+                                        } */
 
         .right-column .card {
             flex: 1;
@@ -601,10 +666,10 @@
         }
 
         /* .chart-wrap {
-                        flex: 1;
-                        min-height: 0;
-                        display: flex;
-                    } */
+                                        flex: 1;
+                                        min-height: 0;
+                                        display: flex;
+                                    } */
 
         .chart-wrap {
             flex-grow: 1;
@@ -615,10 +680,10 @@
         }
 
         /* .chart-wrap canvas {
-                    width: 100% !important;
-                    height: 100% !important;
-                    display: block;
-                } */
+                                    width: 100% !important;
+                                    height: 100% !important;
+                                    display: block;
+                                } */
 
         .chart-wrap canvas {
             width: 100% !important;

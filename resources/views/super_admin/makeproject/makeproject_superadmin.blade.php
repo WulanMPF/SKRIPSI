@@ -16,20 +16,32 @@
 
     <div class="page">
 
-        <form action="{{ route('superadmin.makeproject_store') }}" method="POST" class="form-project">
+        <form action="{{ route('superadmin.makeproject_store') }}" method="POST" class="form-project" enctype="multipart/form-data">
             @csrf
 
-            <div class="form-group">
+            <div class="form-group qe-row">
                 <label for="qe" class="label-qe">QE:</label>
-                <select id="qe" name="qe" required class="select-field" onchange="changeFontColor(this)">
+
+                <select id="qe" name="qe" required class="select-field">
                     <option value="" disabled selected hidden>Pilih Quality Enhancement (QE)</option>
                     @foreach ($qeOptions as $qe)
-                        <option value="{{ $qe['id'] }}" {{ old('qe') == $qe['id'] ? 'selected' : '' }}>
-                            {{ $qe['label'] }}
-                        </option>
+                        <option value="{{ $qe['id'] }}">{{ $qe['label'] }}</option>
                     @endforeach
                 </select>
-                <button type="button" class="btn-make-project" id="btnSubmit">Make Project</button>
+
+                <!-- Upload Foto Eviden -->
+                <div class="foto-eviden-wrapper">
+                    <label>Foto Eviden:</label>
+                    <input type="file" name="foto_eviden[]" accept="image/*" id="fotoEviden" multiple
+                        onchange="previewEviden(this)">
+                    <div class="preview-box">
+                        <img id="imgPreview">
+                    </div>
+                </div>
+
+                <button type="button" class="btn-make-project" id="btnSubmit">
+                    Make Project
+                </button>
             </div>
 
             <div class="form-group">
@@ -52,8 +64,16 @@
 
             <div class="form-group">
                 <label for="pelaksana" class="label-pelaksana">Pelaksana:</label>
-                <input type="text" id="pelaksana" name="pelaksana" required class="input-field"
-                    placeholder="Masukkan pelaksana pekerjaan">
+                {{-- <input type="text" id="pelaksana" name="pelaksana" required class="input-field"
+                    placeholder="Masukkan pelaksana pekerjaan"> --}}
+                <select id="pelaksana" name="pelaksana" class="select-field" required>
+                    <option value="" disabled selected hidden>Pilih Pelaksana</option>
+                    @foreach ($uker_doc as $uk)
+                        <option value="{{ $uk['id'] }}">
+                            {{ $uk['unit'] }}
+                        </option>
+                    @endforeach
+                </select>
             </div>
 
             <div class="form-group">
@@ -135,8 +155,11 @@
                 </div>
             </div>
         </form>
-
-
+        <!-- Modal Zoom Foto -->
+        <div id="imageZoomModal" class="zoom-modal">
+            <span class="zoom-close">&times;</span>
+            <img class="zoom-content" id="zoomedImage">
+        </div>
     </div>
 
     <style>
@@ -226,7 +249,7 @@
             width: 120px;
             color: #133995;
             font-family: 'Poppins', sans-serif;
-            margin-left: 3px;
+            /* margin-left: 2px; */
         }
 
         .label-pekerjaan {
@@ -251,6 +274,12 @@
 
         .label-witel {
             margin-right: 81.5px;
+            /* Specific margin for Witel label */
+        }
+
+        .label-eviden {
+            margin-left: 250px;
+            margin-right: 32px;
             /* Specific margin for Witel label */
         }
 
@@ -399,6 +428,101 @@
             width: 200px !important;
             /* sesuai dengan lebar cell */
         }
+
+        .qe-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .upload-eviden {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .upload-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-upload {
+            background-color: #EDF7FF;
+            color: #133995;
+            border: 1.5px dashed #133995;
+            border-radius: 7px;
+            padding: 7px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .btn-upload:hover {
+            background-color: #133995;
+            color: #fff;
+        }
+
+        .img-preview {
+            display: none;
+            width: 250px;
+            height: 200px;
+            object-fit: contain;
+            border-radius: 8px;
+            border: 2px dashed #133995;
+            padding: 5px;
+            background-color: #f5f8ff;
+        }
+
+        .foto-eviden-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        .preview-box {
+            position: absolute;
+            top: 35px;
+            left: 0;
+            display: none;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .preview-box img {
+            width: 180px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .zoom-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .zoom-content {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 10px;
+            /* box-shadow: 0 0 25px rgba(255, 255, 255, 0.3); */
+        }
+
+        .zoom-close {
+            position: absolute;
+            top: 25px;
+            right: 35px;
+            font-size: 40px;
+            color: #fff;
+            cursor: pointer;
+        }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -412,7 +536,7 @@
             const pekerjaan = document.getElementById('pekerjaan').value.trim();
             const deskripsi = document.getElementById('deskripsi').value.trim();
             const khs = document.getElementById('khs').value.trim();
-            const pelaksana = document.getElementById('pelaksana').value.trim();
+            const pelaksana = document.getElementById('pelaksana').value;
             const witel = document.getElementById('witel').value.trim();
 
             const allFilled = qe && pekerjaan && deskripsi && khs && pelaksana && witel;
@@ -778,7 +902,69 @@
                 });
             }
         });
+
+        function previewEviden(input) {
+            const previewBox = document.querySelector('.preview-box');
+            previewBox.innerHTML = "";
+            const files = input.files;
+
+            if (files.length === 0) {
+                previewBox.style.display = "none";
+                return;
+            }
+
+            if (files.length > 3) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Maksimal 3 Foto',
+                    text: 'Anda hanya dapat mengupload maksimal 3 foto eviden.'
+                });
+
+                input.value = "";
+                previewBox.style.display = "none";
+                return;
+            }
+
+            previewBox.style.display = "flex";
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+
+                reader.onload = function(e) {
+                    const img = document.createElement("img");
+                    img.src = e.target.result;
+
+                    // 🔥 TAMBAHAN INI
+                    img.style.cursor = "pointer";
+                    img.onclick = function() {
+                        openZoom(this.src);
+                    };
+
+                    previewBox.appendChild(img);
+                };
+
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function openZoom(src) {
+            const modal = document.getElementById("imageZoomModal");
+            const zoomedImg = document.getElementById("zoomedImage");
+
+            zoomedImg.src = src;
+            modal.style.display = "flex";
+        }
+
+        // tombol X
+        document.querySelector(".zoom-close").onclick = function() {
+            document.getElementById("imageZoomModal").style.display = "none";
+        };
+
+        // klik background
+        document.getElementById("imageZoomModal").onclick = function(e) {
+            if (e.target.id === "imageZoomModal") {
+                this.style.display = "none";
+            }
+        };
     </script>
-
-
 @endsection

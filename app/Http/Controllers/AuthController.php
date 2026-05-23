@@ -11,7 +11,7 @@ class AuthController extends Controller
     {
         return new FirestoreClient([
             'projectId' => env('FIREBASE_PROJECT_ID'),
-            'keyFilePath' => base_path(env('FIREBASE_CREDENTIALS')), // Ambil dari .env
+            'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),
         ]);
     }
 
@@ -69,9 +69,9 @@ class AuthController extends Controller
         if ($roleName === 'Super Admin') {
             return redirect()->route('superadmin.allproject');
         } elseif ($roleName === 'Telkom Akses') {
-            // return redirect('/dashboard/telkom'); SAMAIN SAMA ROUTE NYA DI WEB
+            return redirect()->route('telkomakses.allproject');
         } elseif ($roleName === 'Mitra') {
-            // return redirect('/dashboard/mitra'); SAMAIN SAMA ROUTE NYA DI WEB
+            return redirect()->route('mitra.allproject');
         } else {
             return redirect('/');
         }

@@ -14,7 +14,7 @@ class ProcessController extends Controller
     {
         return new FirestoreClient([
             'projectId' => env('FIREBASE_PROJECT_ID'),
-            'keyFilePath' => base_path(env('FIREBASE_CREDENTIALS')),
+            'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),
         ]);
     }
 
@@ -218,7 +218,7 @@ class ProcessController extends Controller
         $data = $doc->data();
 
         // --- Ambil data project utama pakai getReferenceData() ---
-        $fotoData    = $this->getReferenceData($data['ta_project_foto_id'] ?? null);
+        $fotoData = $data['ta_project_foto'] ?? [];
         $pendingData = $this->getReferenceData($data['ta_project_pending_id'] ?? null);
         $qeData      = $this->getReferenceData($data['ta_project_qe_id'] ?? null);
 
@@ -232,30 +232,57 @@ class ProcessController extends Controller
             ->documents();
 
         $detail = [];
+        $totalMaterial = 0;
+        $totalJasa = 0;
+
         foreach ($detailDocs as $d) {
             if (!$d->exists()) continue;
 
             $row = $d->data();
-            $designatorData = $row['ta_detail_ta_id']->snapshot()->data();
+
+            // Fetch data from Data_Project_TA
+            $designatorRef = $row['ta_detail_ta_id'];
+            $designatorData = $this->getReferenceData($designatorRef);
 
             $hargaMaterial = $designatorData['ta_harga_material'] ?? 0;
-            $hargaJasa     = $designatorData['ta_harga_jasa'] ?? 0;
-            $volume        = $row['ta_detail_volume'] ?? 0;
+            $hargaJasa = $designatorData['ta_harga_jasa'] ?? 0;
+            $volume = $row['ta_detail_volume'] ?? 0;
+
+            $totalM = $hargaMaterial * $volume;
+            $totalJ = $hargaJasa * $volume;
+
+            $totalMaterial += $totalM;
+            $totalJasa += $totalJ;
 
             $detail[] = (object)[
-                'id'             => $d->id(),
-                'designator'     => $designatorData['ta_designator'] ?? '',
-                'uraian'         => $designatorData['ta_uraian_pekerjaan'] ?? '',
-                'satuan'         => $designatorData['ta_satuan'] ?? '',
+                'id' => $d->id(),
+                'designator' => $designatorData['ta_designator'] ?? '',
+                'uraian' => $designatorData['ta_uraian_pekerjaan'] ?? '',
+                'satuan' => $designatorData['ta_satuan'] ?? '',
                 'harga_material' => $hargaMaterial,
-                'harga_jasa'     => $hargaJasa,
-                'volume'         => $volume,
-                'total_material' => $hargaMaterial * $volume,
-                'total_jasa'     => $hargaJasa * $volume,
+                'harga_jasa' => $hargaJasa,
+                'volume' => $volume,
+                'total_material' => $totalM,
+                'total_jasa' => $totalJ,
             ];
         }
 
-        $totals = $this->hitungTotal($detailDocs);
+        $total = $totalMaterial + $totalJasa;
+        $ppn = $total * 0.11;
+        $grand = $total + $ppn;
+
+        // Update project total in Firestore
+        $docRef->update([
+            ['path' => 'ta_project_total', 'value' => $grand],
+        ]);
+
+        $totals = [
+            'material' => $totalMaterial,
+            'jasa' => $totalJasa,
+            'total' => $total,
+            'ppn' => $ppn,
+            'grand' => $grand,
+        ];
 
         return view('super_admin.process.detail_process', [
             'process' => [
@@ -422,9 +449,10 @@ class ProcessController extends Controller
         $detailDoc = $detailRef->snapshot();
 
         if (!$detailDoc->exists()) {
-            return redirect()
-                ->route('superadmin.process_detail', $id)
-                ->with('error', 'Data detail tidak ditemukan.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Data detail tidak ditemukan.'
+            ], 404);
         }
 
         // Hapus dokumen dari Firestore
@@ -443,9 +471,10 @@ class ProcessController extends Controller
             ['path' => 'ta_project_total', 'value' => $totals['grand']]
         ]);
 
-        return redirect()
-            ->route('superadmin.process_detail', $id)
-            ->with('success', 'Material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Material berhasil dihapus.'
+        ]);
     }
 
     public function destroyProject($id)
@@ -457,7 +486,10 @@ class ProcessController extends Controller
         $projectSnap = $projectRef->snapshot();
 
         if (!$projectSnap->exists()) {
-            return redirect()->back()->with('error', 'Data project tidak ditemukan.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Data project tidak ditemukan.'
+            ], 404);
         }
 
         // Ambil semua detail project yang terhubung
@@ -475,7 +507,10 @@ class ProcessController extends Controller
         // Hapus data project utama
         $projectRef->delete();
 
-        return redirect()->route('superadmin.process')->with('success', 'Data project dan seluruh detail material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Data project dan seluruh material berhasil dihapus.'
+        ]);
     }
 
     public function acc($id)

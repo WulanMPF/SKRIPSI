@@ -13,13 +13,13 @@
     <div class="page">
         <!-- Tombol Back -->
         <div class="action-bar">
-            <a href="{{ route('superadmin.allproject_detail', $allproject['id']) }}" class="btn-back">
+            <a href="{{ route('superadmin.allproject_reject_detail', $reject['id']) }}" class="btn-back">
                 <i class="fa fa-arrow-left" style="margin-right: 8px;"></i> Back
             </a>
         </div>
 
         <!-- Form Edit -->
-        <form action="{{ route('superadmin.allproject_update', $allproject['id']) }}" method="POST">
+        <form action="{{ route('superadmin.allproject_reject_update', $reject['id']) }}" method="POST">
             @csrf
             @method('PUT')
             <!-- Nama Project + Table wrapper -->
@@ -27,7 +27,7 @@
                 <!-- Header Nama Project -->
                 <div class="project-header">
                     <input type="text" name="nama_project" class="input-edit-project"
-                        value="{{ old('nama_project', $acc['nama_project']) }}" required>
+                        value="{{ old('nama_project', $reject['nama_project']) }}" required>
                     <button type="submit" class="btn-done">Done</button>
                 </div>
 
@@ -49,7 +49,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach ($allproject['detail'] ?? [] as $index => $item)
+                            @foreach ($reject['detail'] ?? [] as $index => $item)
                                 <tr>
                                     <td>{{ $index + 1 }}</td>
                                     <td style="width: 150px;">

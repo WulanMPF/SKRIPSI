@@ -1,8 +1,8 @@
-@extends('layouts.super_admin.template_superadmin')
+@extends('layouts.telkom_akses.template_telkomakses')
 @section('title', 'Detail All Project')
 
 @section('header')
-    @include('layouts.super_admin.header_superadmin')
+    @include('layouts.telkom_akses.header_telkomakses')
 @endsection
 
 @section('content')
@@ -11,10 +11,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
     <div class="page">
-        <!-- Tombol Back + ACC / Reject -->
+        <!-- Tombol Back + Kerjakan -->
         <div class="action-bar">
             <!-- Tombol Back -->
-            <a href="{{ route('superadmin.allproject') }}" class="btn-back">
+            <a href="{{ route('telkomakses.allproject') }}" class="btn-back">
                 <i class="fa fa-arrow-left" style="margin-right: 8px;"></i> Back
             </a>
         </div>
@@ -23,8 +23,7 @@
         <div class="table-wrapper">
             <!-- Header Nama Project -->
             <div class="project-header">
-                <span class="project-title">{{ $allproject['nama_project'] ?? 'Nama project belum ada' }}</span>
-                <a href="#" class="edit-project disabled">Edit Project</a>
+                <span class="project-title">{{ $reject['nama_project'] ?? 'Nama project belum ada' }}</span>
             </div>
 
             <!-- Tabel Detail -->
@@ -45,7 +44,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($allproject['detail'] ?? [] as $index => $item)
+                        @foreach ($reject['detail'] ?? [] as $index => $item)
                             <tr>
                                 <td>{{ $index + 1 }}</td>
                                 <td>{{ $item->designator }}</td>
@@ -61,29 +60,45 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <th colspan="7" class="text-end">MATERIAL</th>
-                            <th colspan="2">{{ number_format($totals['material'], 0, ',', '.') }}</th>
+                            <th colspan="6" class="text-end">MATERIAL</th>
+                            <th colspan="3">{{ number_format($totals['material'], 0, ',', '.') }}</th>
                         </tr>
                         <tr>
-                            <th colspan="7" class="text-end">JASA</th>
-                            <th colspan="2">{{ number_format($totals['jasa'], 0, ',', '.') }}</th>
+                            <th colspan="6" class="text-end">JASA</th>
+                            <th colspan="3">{{ number_format($totals['jasa'], 0, ',', '.') }}</th>
                         </tr>
                         <tr>
-                            <th colspan="7" class="text-end">TOTAL</th>
-                            <th colspan="2">{{ number_format($totals['total'], 0, ',', '.') }}</th>
+                            <th colspan="6" class="text-end">TOTAL</th>
+                            <th colspan="3">{{ number_format($totals['total'], 0, ',', '.') }}</th>
                         </tr>
                         <tr>
-                            <th colspan="7" class="text-end">PPN</th>
-                            <th colspan="2">{{ number_format($totals['ppn'], 0, ',', '.') }}</th>
+                            <th colspan="6" class="text-end">PPN</th>
+                            <th colspan="3">{{ number_format($totals['ppn'], 0, ',', '.') }}</th>
                         </tr>
                         <tr>
-                            <th colspan="7" class="text-end">TOTAL SETELAH PPN</th>
-                            <th colspan="2">{{ number_format($totals['grand'], 0, ',', '.') }}</th>
+                            <th colspan="6" class="text-end">TOTAL SETELAH PPN</th>
+                            <th colspan="3">{{ number_format($totals['grand'], 0, ',', '.') }}</th>
                         </tr>
                     </tfoot>
                 </table>
             </div>
         </div>
+
+        <!-- Foto Evident -->
+        @if (!empty($reject['foto']) && count($reject['foto']) > 0)
+            <h3 class="section-title">Foto Evident:</h3>
+            <div class="rekap-box">
+                <div class="foto-group">
+                    <div class="foto-list">
+                        @forelse($reject['foto'] as $foto)
+                            <img src="{{ $foto }}" class="foto-item" alt="Foto Eviden">
+                        @empty
+                            <span>-</span>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
+        @endif
     </div>
 
     <style>
@@ -106,11 +121,6 @@
             margin-bottom: 16px;
         }
 
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
         .btn-back {
             background: var(--blue);
             color: white;
@@ -120,48 +130,6 @@
             text-decoration: none;
             display: flex;
             align-items: center;
-        }
-
-        .btn-back:hover {
-            background-color: #fff;
-            color: #133995 !important;
-            border: 1px solid #CFD0D2;
-            text-decoration: none;
-        }
-
-        .btn-action {
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            color: white;
-            font-size: 14px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-        }
-
-        .btn-acc {
-            background: #22973F;
-        }
-
-        .btn-acc:hover {
-            background-color: #fff;
-            color: #22973F !important;
-            border: 1px solid #CFD0D2;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .btn-reject {
-            background: #C8170D;
-        }
-
-        .btn-reject:hover {
-            background-color: #fff;
-            color: #C8170D !important;
-            border: 1px solid #CFD0D2;
-            text-decoration: none;
-            cursor: pointer;
         }
 
         .table-wrapper {
@@ -184,19 +152,6 @@
 
         .project-title {
             color: #595961;
-        }
-
-        .edit-project {
-            font-size: 14px;
-            font-weight: 500;
-            color: #133995;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .edit-project:hover {
-            text-decoration: underline;
-            color: #133995;
         }
 
         .table-responsive {
@@ -253,6 +208,58 @@
         #data-table td:first-child,
         #data-table th:first-child {
             width: 50px;
+        }
+
+        /* Rekap */
+        .section-title {
+            color: #133995;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .rekap-section {
+            margin-left: 1.5rem;
+            margin-right: 1.5rem;
+        }
+
+        .rekap-box {
+            background: #F9F9F9;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        /* Foto Evident */
+        .foto-group {
+            margin-bottom: 20px;
+        }
+
+        .foto-title {
+            font-weight: 600;
+            color: #133995;
+            margin-bottom: 10px;
+        }
+
+        .foto-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .foto-container {
+            padding: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            background: #F9F9F9;
+        }
+
+        .foto-item {
+            width: 180px;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid #ddd;
         }
     </style>
 

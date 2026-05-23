@@ -68,8 +68,7 @@
                                 <td>
                                     <form
                                         action="{{ route('superadmin.reject_destroy', ['id' => $reject['id'], 'detailId' => $item->id]) }}"
-                                        method="POST"
-                                        onsubmit="return confirm('Apakah Anda yakin ingin menghapus material ini?')">
+                                        method="POST" class="form-delete-material">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit"
@@ -132,10 +131,10 @@
                         <br>
                         <button type="button" id="browseExcelBtn" class="btn-browse">Browse</button>
 
-                        {{-- <div id="filePreview" class="file-preview"
+                        <div id="filePreview" class="file-preview"
                             style="margin-top: 10px; color: #133995; font-size: 13px; font-weight: 500;"></div>
 
-                        <div class="form-qe">
+                        {{-- <div class="form-qe">
                             <label class="label-qe">QE:</label>
                             <select name="qe" class="select-field" required>
                                 <option value="" disabled selected hidden>Pilih Jenis QE</option>
@@ -160,16 +159,32 @@
         <!-- Tombol Delete Data Project -->
         <div id="deleteProject" style="margin-top: 20px; text-align: left;">
             <form action="{{ route('superadmin.reject_destroy_project', $reject['id']) }}" method="POST"
-                onsubmit="return confirm('Apakah Anda yakin ingin menghapus seluruh data project ini beserta detail materialnya?')">
+                class="form-delete-project">
                 @csrf
                 @method('DELETE')
                 <button type="submit"
                     style="background-color:#C8170D; color:white; padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-family: 'Poppins', sans-serif;
-                font-weight: 500;">
+                    font-weight: 500;">
                     <i class="fa fa-trash" style="margin-right:8px;"></i> Hapus Data Project
                 </button>
             </form>
         </div>
+
+        <!-- Foto Evident -->
+        @if (!empty($reject['foto']) && count($reject['foto']) > 0)
+            <h3 class="section-title">Foto Evident:</h3>
+            <div class="rekap-box">
+                <div class="foto-group">
+                    <div class="foto-list">
+                        @forelse($reject['foto'] as $foto)
+                            <img src="{{ $foto }}" class="foto-item" alt="Foto Eviden">
+                        @empty
+                            <span>-</span>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
+        @endif
     </div>
 
     <style>
@@ -263,6 +278,26 @@
 
         .btn-browse:hover {
             opacity: 0.9;
+        }
+
+        .btn-save {
+            background-color: #133995;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            padding: 7px 20px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 500;
+            border: 1.5px solid transparent;
+            transition: background-color 0.3s;
+        }
+
+        .btn-save:hover {
+            background-color: white;
+            color: #133995;
+            border-color: #CFD0D2;
         }
 
         .addRevisiForm {
@@ -368,6 +403,58 @@
         #data-table th:first-child {
             width: 50px;
         }
+
+        /* Rekap */
+        .section-title {
+            color: #133995;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .rekap-section {
+            margin-left: 1.5rem;
+            margin-right: 1.5rem;
+        }
+
+        .rekap-box {
+            background: #F9F9F9;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        /* Foto Evident */
+        .foto-group {
+            margin-bottom: 20px;
+        }
+
+        .foto-title {
+            font-weight: 600;
+            color: #133995;
+            margin-bottom: 10px;
+        }
+
+        .foto-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .foto-container {
+            padding: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            background: #F9F9F9;
+        }
+
+        .foto-item {
+            width: 180px;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+        }
     </style>
 
     <!-- Script Chart.JS -->
@@ -376,6 +463,8 @@
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/id.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
         // Ambil elemen modal Add Revisi
@@ -398,6 +487,216 @@
 
         document.getElementById("browseExcelBtn").addEventListener("click", function() {
             document.getElementById("excelFile").click();
+        });
+
+        // === BROWSE FILE HANDLER ===
+        document.getElementById("excelFile").addEventListener("change", function(event) {
+            const fileInput = event.target;
+            const preview = document.getElementById("filePreview");
+
+            if (fileInput.files && fileInput.files.length > 0) {
+                const fileName = fileInput.files[0].name;
+                preview.textContent = `📁 ${fileName}`;
+            } else {
+                preview.textContent = "";
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+
+            const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+            // SWEETALERT UNTUK DELETE MATERIAL
+            document.querySelectorAll('.form-delete-material').forEach(form => {
+                form.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    Swal.fire({
+                        title: 'Apakah Anda yakin?',
+                        text: 'Material ini akan dihapus dari project dan tidak dapat dikembalikan.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#133995',
+                        cancelButtonColor: '#C8170D',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonText: 'Ya, hapus material!',
+                        reverseButtons: true
+                    }).then(async (result) => {
+                        if (result.isConfirmed) {
+                            Swal.fire({
+                                title: 'Sedang menghapus material...',
+                                text: 'Mohon tunggu sebentar.',
+                                allowOutsideClick: false,
+                                didOpen: () => Swal.showLoading()
+                            });
+
+                            try {
+                                const res = await fetch(form.action, {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': token
+                                    },
+                                    body: new FormData(form)
+                                });
+
+                                const data = await res.json().catch(() => ({}));
+                                if (!res.ok || data.success === false)
+                                    throw new Error(data.message ||
+                                        'Terjadi kesalahan saat menghapus material.'
+                                        );
+
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: data.message ||
+                                        'Material berhasil dihapus.',
+                                    confirmButtonColor: '#133995'
+                                }).then(() => window.location.reload());
+
+                            } catch (err) {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Gagal!',
+                                    text: err.message ||
+                                        'Terjadi kesalahan saat menghapus material.',
+                                    confirmButtonColor: '#C8170D'
+                                });
+                            }
+                        }
+                    });
+                });
+            });
+
+            // SWEETALERT UNTUK DELETE PROJECT
+            const deleteProjectForm = document.querySelector('.form-delete-project');
+            if (deleteProjectForm) {
+                deleteProjectForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    Swal.fire({
+                        title: 'Apakah Anda yakin?',
+                        text: 'Seluruh data project beserta material akan dihapus secara permanen.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#133995',
+                        cancelButtonColor: '#C8170D',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonText: 'Ya, hapus project!',
+                        reverseButtons: true
+                    }).then(async (result) => {
+                        if (result.isConfirmed) {
+                            Swal.fire({
+                                title: 'Sedang menghapus project...',
+                                text: 'Mohon tunggu sebentar.',
+                                allowOutsideClick: false,
+                                didOpen: () => Swal.showLoading()
+                            });
+
+                            try {
+                                const res = await fetch(deleteProjectForm.action, {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': token
+                                    },
+                                    body: new FormData(deleteProjectForm)
+                                });
+
+                                const data = await res.json().catch(() => ({}));
+                                if (!res.ok || data.success === false)
+                                    throw new Error(data.message ||
+                                        'Terjadi kesalahan saat menghapus project.');
+
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: data.message ||
+                                        'Seluruh data project berhasil dihapus.',
+                                    confirmButtonColor: '#133995'
+                                }).then(() => {
+                                    window.location.href =
+                                        "{{ route('superadmin.reject') }}";
+                                });
+
+                            } catch (err) {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Gagal!',
+                                    text: err.message ||
+                                        'Terjadi kesalahan saat menghapus project.',
+                                    confirmButtonColor: '#C8170D'
+                                });
+                            }
+                        }
+                    });
+                });
+            }
+
+            // SWEETALERT UNTUK UPLOAD FILE REVISI
+            const formRevisi = document.getElementById("addRevisiForm");
+            if (formRevisi) {
+                formRevisi.addEventListener("submit", async function(e) {
+                    e.preventDefault();
+
+                    Swal.fire({
+                        title: 'Upload File Revisi?',
+                        text: 'Pastikan file yang diunggah sudah benar sebelum disimpan.',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonColor: '#133995',
+                        cancelButtonColor: '#C8170D',
+                        confirmButtonText: 'Ya, upload!',
+                        cancelButtonText: 'Batal',
+                        reverseButtons: true
+                    }).then(async (result) => {
+                        if (result.isConfirmed) {
+
+                            addRevisiModal.style.display = "none";
+
+                            setTimeout(() => {
+                                Swal.fire({
+                                    title: 'Mengupload...',
+                                    text: 'Mohon tunggu sebentar.',
+                                    allowOutsideClick: false,
+                                    didOpen: () => Swal.showLoading()
+                                });
+                            }, 200);
+
+                            try {
+                                const res = await fetch(formRevisi.action, {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                                    },
+                                    body: new FormData(formRevisi)
+                                });
+
+                                const data = await res.json().catch(() => ({}));
+
+                                if (!res.ok || data.success === false)
+                                    throw new Error(data.message ||
+                                        'Terjadi kesalahan saat upload file revisi.');
+
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: data.message ||
+                                        'File revisi berhasil diupload.',
+                                    confirmButtonColor: '#133995'
+                                }).then(() => {
+                                    window.location.href = "{{ route('superadmin.process') }}";
+                                });
+
+                            } catch (err) {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Gagal!',
+                                    text: err.message ||
+                                        'Terjadi kesalahan saat upload file revisi.',
+                                    confirmButtonColor: '#C8170D'
+                                });
+                            }
+                        }
+                    });
+                });
+            }
         });
     </script>
 

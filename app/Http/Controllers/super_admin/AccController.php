@@ -7,9 +7,16 @@ use Google\Cloud\Firestore\FirestoreClient;
 use Google\Cloud\Core\Timestamp as FireTimestamp;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+// use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
-
+use Cloudinary\Cloudinary;
+// use Google\Cloud\Firestore\DocumentSnapshot;
+// use Illuminate\Support\Str;
+use App\Models\PertMasterTask;
+use App\Models\PertInput;
+use App\Models\PertResult;
+use App\Models\PertPath;
+use App\Models\PertMasterDependency;
 
 class AccController extends Controller
 {
@@ -17,7 +24,7 @@ class AccController extends Controller
     {
         return new FirestoreClient([
             'projectId' => env('FIREBASE_PROJECT_ID'),
-            'keyFilePath' => base_path(env('FIREBASE_CREDENTIALS')),
+            'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),
         ]);
     }
 
@@ -130,12 +137,12 @@ class AccController extends Controller
                     }
                 }
 
-                $accFotoRef = $data['ta_project_foto_id'];
-                $accPendingRef = $data['ta_project_pending_id'];
+                // $accFotoRef = $data['ta_project_foto_id'];
+                // $accPendingRef = $data['ta_project_pending_id'];
                 $accQERef = $data['ta_project_qe_id'];
 
-                $fotoData = $this->getReferenceData($accFotoRef);
-                $pendingData = $this->getReferenceData($accPendingRef);
+                // $fotoData = $this->getReferenceData($accFotoRef);
+                // $pendingData = $this->getReferenceData($accPendingRef);
                 $qeData = $this->getReferenceData($accQERef);
 
                 $tglUpload = $this->formatDate($data['ta_project_waktu_upload'] ?? null);
@@ -235,11 +242,28 @@ class AccController extends Controller
         $docRef = $firestore->collection('All_Project_TA')->document($id);
         $doc = $docRef->snapshot();
 
+        // dd($id);
+
         if (!$doc->exists()) {
             return redirect()->route('superadmin.acc')->with('error', 'Data project tidak ditemukan');
         }
 
         $data = $doc->data();
+        $qeRef = $data['ta_project_qe_id'] ?? null;
+
+        $qe = '';
+
+        if ($qeRef) {
+
+            $qeSnapshot = $qeRef->snapshot();
+
+            if ($qeSnapshot->exists()) {
+
+                $qeData = $qeSnapshot->data();
+
+                $qe = strtolower(trim($qeData['type'] ?? ''));
+            }
+        }
 
         // --- Foto evident (ambil semua dokumen by project_id)
         $fotoDocs = $firestore->collection('Foto_Evident')
@@ -302,19 +326,27 @@ class AccController extends Controller
             ->documents();
 
         $detail = [];
+        $totalMaterial = 0;
+        $totalJasa = 0;
 
         foreach ($detailDocs as $d) {
             if (!$d->exists()) continue;
 
             $row = $d->data();
 
-            // Fetch designator data
+            // Fetch data from Data_Project_TA
             $designatorRef = $row['ta_detail_ta_id'];
             $designatorData = $this->getReferenceData($designatorRef);
 
             $hargaMaterial = $designatorData['ta_harga_material'] ?? 0;
             $hargaJasa = $designatorData['ta_harga_jasa'] ?? 0;
             $volume = $row['ta_detail_volume'] ?? 0;
+
+            $totalM = $hargaMaterial * $volume;
+            $totalJ = $hargaJasa * $volume;
+
+            $totalMaterial += $totalM;
+            $totalJasa += $totalJ;
 
             $detail[] = (object)[
                 'id' => $d->id(),
@@ -324,20 +356,168 @@ class AccController extends Controller
                 'harga_material' => $hargaMaterial,
                 'harga_jasa' => $hargaJasa,
                 'volume' => $volume,
-                'total_material' => $hargaMaterial * $volume,
-                'total_jasa' => $hargaJasa * $volume,
+                'total_material' => $totalM,
+                'total_jasa' => $totalJ,
             ];
         }
 
-        $totals = $this->hitungTotal($detailDocs);
+        $total = $totalMaterial + $totalJasa;
+        $ppn = $total * 0.11;
+        $grand = $total + $ppn;
 
-        // // 🔍 DEBUG CEK DATA FOTO DAN PENDING
-        // dd([
-        //     'id_project' => $id,
-        //     'fotoData' => $fotoData,
-        //     'pendingData' => $pendingData,
-        // ]);
+        // Update project total in Firestore
+        $docRef->update([
+            ['path' => 'ta_project_total', 'value' => $grand],
+        ]);
 
+        $totals = [
+            'material' => $totalMaterial,
+            'jasa' => $totalJasa,
+            'total' => $total,
+            'ppn' => $ppn,
+            'grand' => $grand,
+        ];
+
+        // PENAMBAHAN MODUL PERT
+        $pertTasks = [];
+        $pertResult = [];
+        $criticalPath = [];
+
+        // hanya jalan kalau project punya waktu pengerjaan
+        if (!empty($data['ta_project_waktu_pengerjaan'])) {
+
+            // cek apakah sudah ada input PERT
+            $hasInput = PertInput::where('project_id', $id)->exists();
+
+            // =========================
+            // 🔹 KONDISI SUDAH INPUT
+            // =========================
+            if ($hasInput) {
+
+                $pertCollection = PertInput::with('masterTask')
+                    ->where('project_id', $id)
+                    ->get();
+
+                // ambil critical path
+                $criticalPath = $this->getCriticalPath($id);
+
+                foreach ($pertCollection as $item) {
+
+                    $kode = $item->masterTask->kode ?? null;
+
+                    // untuk tabel utama
+                    $pertTasks[] = [
+                        'id_master' => $item->id_master,
+                        'kode' => $kode,
+                        'nama_pekerjaan' => $item->masterTask->nama_pekerjaan ?? '-',
+                        'realistis' => $item->masterTask->realistis ?? 0,
+                        'optimis' => $item->optimis ?? 0,
+                        'pesimis' => $item->pesimis ?? 0,
+                        'time_expected' => $item->time_expected ?? 0,
+                    ];
+
+                    // untuk hasil (critical path)
+                    if (in_array($kode, $criticalPath)) {
+                        $pertResult[] = [
+                            'kode' => $kode,
+                            'nama_pekerjaan' => $item->masterTask->nama_pekerjaan ?? '-',
+                            'realistis' => $item->masterTask->realistis ?? 0,
+                            'optimis' => $item->optimis ?? 0,
+                            'pesimis' => $item->pesimis ?? 0,
+                            'time_expected' => $item->time_expected ?? 0,
+                        ];
+                    }
+                }
+
+                // kalau belum ada hasil critical path → fallback tampil semua
+                if (empty($pertResult)) {
+                    $pertResult = $pertTasks;
+                }
+            }
+            // =========================
+            // 🔹 KONDISI BELUM INPUT
+            // =========================
+            else {
+
+                $qeRef = $data['ta_project_qe_id'] ?? null;
+
+                $qe = '';
+
+                if ($qeRef) {
+
+                    $qeSnapshot = $qeRef->snapshot();
+
+                    if ($qeSnapshot->exists()) {
+
+                        $qeData = $qeSnapshot->data();
+
+                        $qe = strtolower(trim($qeData['type'] ?? ''));
+                    }
+                }
+
+                if (str_contains($qe, 'material')) {
+
+                    $pertCollection = PertMasterTask::whereBetween('id_master', [1, 15])->get();
+                } elseif (str_contains($qe, 'preventive')) {
+
+                    $pertCollection = PertMasterTask::whereBetween('id_master', [16, 29])->get();
+                } elseif (str_contains($qe, 'relokasi')) {
+
+                    $pertCollection = PertMasterTask::whereBetween('id_master', [30, 44])->get();
+                } elseif (str_contains($qe, 'recovery')) {
+
+                    $pertCollection = PertMasterTask::whereBetween('id_master', [45, 60])->get();
+                } else {
+
+                    $pertCollection = collect();
+                }
+
+                foreach ($pertCollection as $task) {
+
+                    $pertTasks[] = [
+                        'id_master' => $task->id_master,
+                        'kode' => $task->kode,
+                        'nama_pekerjaan' => $task->nama_pekerjaan,
+                        'realistis' => $task->realistis,
+                        'optimis' => null,
+                        'pesimis' => null,
+                        'time_expected' => null,
+                    ];
+                }
+            }
+        }
+
+        // tentukan range berdasarkan QE
+        $range = [];
+
+        if (str_contains($qe, 'material')) {
+            $range = [1, 15];
+        } elseif (str_contains($qe, 'preventive')) {
+            $range = [16, 29];
+        } elseif (str_contains($qe, 'relokasi')) {
+            $range = [30, 44];
+        } elseif (str_contains($qe, 'recovery')) {
+            $range = [45, 60];
+        }
+
+        // ambil model sesuai range
+        $allModels = PertResult::with([
+            'paths' => function ($q) use ($range) {
+                $q->whereBetween('id_master', $range)
+                    ->orderBy('urutan');
+            },
+            'paths.masterTask'
+        ])
+            ->where('project_id', $id)
+            ->get();
+
+        // filter model kosong
+        $allModels = $allModels->filter(function ($model) {
+            return $model->paths->count() > 0;
+        });
+
+        // reset index collection
+        $allModels = $allModels->values();
 
         return view('super_admin.acc.detail_acc', [
             'acc' => [
@@ -346,14 +526,24 @@ class AccController extends Controller
                 'deskripsi_project' => $data['ta_project_deskripsi'],
                 'qe'              => $data['ta_project_qe_id'] ?? null,
                 'foto'            => $fotoData,
+                'foto_project'    => $data['ta_project_foto'] ?? [],
                 'pending'         => $pendingData,
                 'tgl_upload'      => $this->formatDate($data['ta_project_waktu_upload'] ?? null),
                 'tgl_pengerjaan'  => $this->formatDate($data['ta_project_waktu_pengerjaan'] ?? null),
                 'tgl_selesai'     => $this->formatDate($data['ta_project_waktu_selesai'] ?? null),
                 'status'          => $data['ta_project_status'],
                 'total'           => $data['ta_project_total'],
+
+                // detail
                 'detail'          => $detail,
+
+                // PERT
+                'pertTasks'       => $pertTasks,
+                'pertResult'      => $pertResult,
+                'criticalPath'    => $criticalPath,
+                'allModels'       => $allModels,
             ],
+
             'totals' => $totals,
         ]);
     }
@@ -504,9 +694,10 @@ class AccController extends Controller
         $detailDoc = $detailRef->snapshot();
 
         if (!$detailDoc->exists()) {
-            return redirect()
-                ->route('superadmin.acc_detail', $id)
-                ->with('error', 'Data detail tidak ditemukan.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Data detail tidak ditemukan.'
+            ], 404);
         }
 
         // Hapus dokumen dari Firestore
@@ -525,9 +716,10 @@ class AccController extends Controller
             ['path' => 'ta_project_total', 'value' => $totals['grand']]
         ]);
 
-        return redirect()
-            ->route('superadmin.acc_detail', $id)
-            ->with('success', 'Material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Material berhasil dihapus.'
+        ]);
     }
 
     public function destroyProject($id)
@@ -539,7 +731,10 @@ class AccController extends Controller
         $projectSnap = $projectRef->snapshot();
 
         if (!$projectSnap->exists()) {
-            return redirect()->back()->with('error', 'Data project tidak ditemukan.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Data project tidak ditemukan.'
+            ], 404);
         }
 
         // Ambil semua detail project yang terhubung
@@ -557,7 +752,10 @@ class AccController extends Controller
         // Hapus data project utama
         $projectRef->delete();
 
-        return redirect()->route('superadmin.acc')->with('success', 'Data project dan seluruh detail material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Data project dan seluruh material berhasil dihapus.'
+        ]);
     }
 
     public function kerjakan($id)
@@ -585,75 +783,166 @@ class AccController extends Controller
 
     public function storeFoto(Request $request, $id)
     {
-        $firestore = $this->getFirestore();
+        // dd($request->file('foto_sebelum'), $request->file('foto_sesudah'));
 
-        // cari dokumen foto berdasarkan project_id
-        $fotoDocs = $firestore->collection('Foto_Evident')
-            ->where('project_id', '=', $id)
-            ->documents();
+        try {
+            $firestore = $this->getFirestore();
 
-        // kalau belum ada dokumen untuk project ini → buat baru
-        $docRef = null;
-        foreach ($fotoDocs as $doc) {
-            if ($doc->exists()) {
-                $docRef = $firestore->collection('Foto_Evident')->document($doc->id());
-                break;
+            $docRef = $firestore
+                ->collection('acc')
+                ->document($id);
+
+            if (empty($request->file('foto_sebelum')) && empty($request->file('foto_sesudah'))) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Tidak ada file yang diupload.'
+                ], 400);
             }
-        }
 
-        if (!$docRef) {
-            // bikin dokumen baru
-            $docRef = $firestore->collection('Foto_Evident')->add([
-                'project_id' => $id,
-                'foto_path'  => [
-                    'sebelum' => [],
-                    'proses' => [],
-                    'sesudah' => [],
-                ],
-                'uploaded_at' => new FireTimestamp(new \DateTime())
-            ]);
-            $docRef = $firestore->collection('Foto_Evident')->document($docRef->id());
-        }
+            $cloudinary = new Cloudinary(config('cloudinary.url'));
 
-        // ambil data lama biar ga kehapus
-        $fotoData = $docRef->snapshot()->data()['foto_path'] ?? [
-            'sebelum' => [],
-            'proses'  => [],
-            'sesudah' => [],
-        ];
+            $uploaded = [
+                'sebelum' => [],
+                'sesudah' => [],
+            ];
 
-        // upload per kategori
-        foreach (['sebelum', 'proses', 'sesudah'] as $tipe) {
-            $inputName = 'foto_' . $tipe;
-            if ($request->hasFile($inputName)) {
-                foreach ($request->file($inputName) as $file) {
-                    $path = $file->store("uploads/foto/{$tipe}", 'public');
-                    $fotoData[$tipe][] = asset('storage/' . $path);
+            // ================================
+            // LOOP FOTO SEBELUM PER DESIGNATOR
+            // ================================
+            if (!empty($request->file('foto_sebelum'))) {
+                foreach ($request->file('foto_sebelum') as $designator => $files) {
+                    foreach ($files as $file) {
+                        if (!$file->isValid()) continue;
+
+                        $upload = $cloudinary->uploadApi()->upload(
+                            $file->getRealPath(),
+                            [
+                                'folder' => "new_evident_foto/sebelum/$designator"
+                            ]
+                        );
+
+                        $uploaded['sebelum'][$designator][] = $upload['secure_url'];
+                    }
                 }
             }
-        }
 
-        // update data di Firestore
-        $docRef->update([
-            ['path' => 'foto_path', 'value' => $fotoData],
-            ['path' => 'uploaded_at', 'value' => new FireTimestamp(new \DateTime())],
-        ]);
+            // ================================
+            // LOOP FOTO SESUDAH PER DESIGNATOR
+            // ================================
+            if (!empty($request->file('foto_sesudah'))) {
+                foreach ($request->file('foto_sesudah') as $designator => $files) {
+                    foreach ($files as $file) {
+                        if (!$file->isValid()) continue;
 
-        // 🚀 Tambahan: update project utama supaya "Done" hanya bisa sekali
-        $projectRef = $firestore->collection('All_Project_TA')->document($id);
-        $projectDoc = $projectRef->snapshot();
+                        $upload = $cloudinary->uploadApi()->upload(
+                            $file->getRealPath(),
+                            [
+                                'folder' => "new_evident_foto/sesudah/$designator"
+                            ]
+                        );
 
-        if ($projectDoc->exists()) {
-            // Jika belum selesai → set tanggal selesai
-            $data = $projectDoc->data();
-            if (empty($data['ta_project_waktu_selesai'])) {
-                $projectRef->update([
-                    ['path' => 'ta_project_waktu_selesai', 'value' => new FireTimestamp(new \DateTime())],
-                ]);
+                        $uploaded['sesudah'][$designator][] = $upload['secure_url'];
+                    }
+                }
             }
-        }
 
-        return back()->with('success', 'Foto evident berhasil diupload.');
+            // ================================
+            // CARI / BUAT DOKUMEN FOTO_EVIDENT
+            // ================================
+            $fotoDocs = $firestore->collection('Foto_Evident')
+                ->where('project_id', '=', $id)
+                ->documents();
+
+            $docRef = null;
+            foreach ($fotoDocs as $d) {
+                if ($d->exists()) {
+                    $docRef = $firestore
+                        ->collection('Foto_Evident')
+                        ->document($d->id());
+                    break;
+                }
+            }
+
+            if (!$docRef) {
+                $newDoc = $firestore->collection('Foto_Evident')->add([
+                    'project_id' => $id,
+                    'foto_path' => [
+                        'sebelum' => [],
+                        'sesudah' => [],
+                    ],
+                    'uploaded_at' => new FireTimestamp(new \DateTime()),
+                ]);
+
+                $docRef = $firestore
+                    ->collection('Foto_Evident')
+                    ->document($newDoc->id());
+            }
+
+            // ================================
+            // AMBIL DATA EXISTING
+            // ================================
+            $snapshot = $docRef->snapshot()->data() ?? [];
+
+            $existing = $snapshot['foto_path'] ?? [
+                'sebelum' => [],
+                'sesudah' => [],
+            ];
+
+            // ================================
+            // MERGE PER DESIGNATOR
+            // ================================
+            foreach ($uploaded['sebelum'] as $dsg => $urls) {
+                $existing['sebelum'][$dsg] =
+                    array_merge($existing['sebelum'][$dsg] ?? [], $urls);
+            }
+
+            foreach ($uploaded['sesudah'] as $dsg => $urls) {
+                $existing['sesudah'][$dsg] =
+                    array_merge($existing['sesudah'][$dsg] ?? [], $urls);
+            }
+
+            // ================================
+            // SIMPAN KE FIRESTORE
+            // ================================
+            $docRef->set([
+                'project_id' => $id,
+                'foto_path' => $existing,
+                'uploaded_at' => new FireTimestamp(new \DateTime()),
+            ], ['merge' => true]);
+
+            // =====================================
+            // UPDATE ta_project_waktu_selesai
+            // =====================================
+            $projectRef = $firestore
+                ->collection('All_Project_TA') // pastikan nama collection benar
+                ->document($id);
+
+            $projectSnapshot = $projectRef->snapshot();
+
+            if ($projectSnapshot->exists()) {
+                $projectData = $projectSnapshot->data();
+
+                // hanya set jika belum ada
+                if (empty($projectData['ta_project_waktu_selesai'])) {
+                    $projectRef->update([
+                        [
+                            'path'  => 'ta_project_waktu_selesai',
+                            'value' => new FireTimestamp(new \DateTime()),
+                        ],
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Foto evident berhasil diupload.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function pending(Request $request, $id)
@@ -707,4 +996,853 @@ class AccController extends Controller
             return '-';
         }
     }
+
+
+
+    // ===================== //
+    // PENAMBAHAN MODUL PERT //
+    // ===================== //
+
+    // INPUT OPTIMIS & PESIMIS
+    public function storePert(Request $request, $projectId)
+    {
+        // dump($request->all());
+
+        foreach ($request->id_master as $i => $idMaster) {
+
+            // ambil data master task (untuk realistis)
+            $task = PertMasterTask::find($idMaster);
+
+            // dump([
+            //     'id_master' => $idMaster,
+            //     'task' => $task
+            // ]);
+
+            if (!$task) continue;
+
+            $optimis   = (float) $request->optimis[$i];
+            $pesimis   = (float) $request->pesimis[$i];
+
+            // ambil realistis dari pert_master_task
+            $realistis = (float) $task->realistis;
+
+            // rumus PERT
+            $timeExpected = ($optimis + (4 * $realistis) + $pesimis) / 6;
+
+            // dump([
+            //     'kode' => $task->kode,
+            //     'optimis' => $optimis,
+            //     'realistis' => $realistis,
+            //     'pesimis' => $pesimis,
+            //     'time_expected' => $timeExpected
+            // ]);
+
+            // simpan ke pert_input
+            PertInput::create([
+                'id_master'     => $idMaster,
+                'project_id'    => $projectId,
+                'optimis'       => $optimis,
+                'pesimis'       => $pesimis,
+                'time_expected' => $timeExpected
+            ]);
+
+            // dump($input);
+        }
+
+        // Generate model PERT
+        $this->generatePertModel($projectId);
+        // dd(PertResult::where('project_id', $projectId)->get());
+
+        return back()->with('success', 'Data PERT berhasil disimpan');
+    }
+
+    private function generatePertModel($projectId)
+    {
+        // =========================
+        // 1. HAPUS DATA LAMA
+        // =========================
+        $oldResults = PertResult::where('project_id', $projectId)->get();
+
+        foreach ($oldResults as $old) {
+            PertPath::where('id_result', $old->id_result)->delete();
+        }
+
+        PertResult::where('project_id', $projectId)->delete();
+
+
+        // =========================
+        // 2. AMBIL INPUT
+        // =========================
+        $inputs = PertInput::with('masterTask')
+            ->where('project_id', $projectId)
+            ->get();
+
+        $taskIds = $inputs->pluck('id_master')->toArray();
+
+        $expectedMap = [];
+        foreach ($inputs as $input) {
+            $expectedMap[$input->masterTask->id_master] = $input->time_expected;
+        }
+
+        // dd($expectedMap);
+
+        // =========================
+        // 3. GRAPH DEPENDENCY
+        // =========================
+        $dependencies = PertMasterDependency::whereIn('id_master', $taskIds)
+            ->get()
+            ->filter(function ($dep) use ($taskIds) {
+                return $dep->ketergantungan === null
+                    || in_array($dep->ketergantungan, $taskIds);
+            });
+
+        $graph = [];
+        foreach ($dependencies as $dep) {
+            if ($dep->ketergantungan !== null) {
+                $graph[$dep->ketergantungan][] = $dep->id_master;
+            }
+        }
+
+
+        // =========================
+        // 4. CARI START NODE
+        // =========================
+        $allTasks = $taskIds;
+
+        $startNodes = [];
+
+        foreach ($allTasks as $task) {
+            $isStart = true;
+
+            foreach ($dependencies as $dep) {
+                if ($dep->id_master == $task && $dep->ketergantungan !== null) {
+                    $isStart = false;
+                    break;
+                }
+            }
+
+            if ($isStart) {
+                $startNodes[] = $task;
+            }
+        }
+
+
+        // =========================
+        // 5. BUILD PATH
+        // =========================
+        $paths = [];
+
+        function buildPath($current, $graph, $path = [])
+        {
+            $path[] = $current;
+
+            if (!isset($graph[$current])) {
+                return [$path];
+            }
+
+            $allPaths = [];
+
+            foreach ($graph[$current] as $next) {
+                $subPaths = buildPath($next, $graph, $path);
+
+                foreach ($subPaths as $sp) {
+                    $allPaths[] = $sp;
+                }
+            }
+
+            return $allPaths;
+        }
+
+        foreach ($startNodes as $start) {
+            $paths = array_merge($paths, buildPath($start, $graph));
+        }
+
+
+        // =========================
+        // 6. SIMPAN + HITUNG
+        // =========================
+        $minDurasi = null;
+        $criticalId = null;
+
+        // dd($paths);
+
+        foreach ($paths as $path) {
+
+            $durasi = 0;
+
+            foreach ($path as $taskId) {
+                $durasi += $expectedMap[$taskId] ?? 0;
+            }
+
+            // simpan ke pert_result
+            $result = PertResult::create([
+                'project_id' => $projectId,
+                'tot_durasi' => $durasi,
+                'is_critical' => 0
+            ]);
+
+            // simpan ke pert_path
+            foreach ($path as $i => $taskId) {
+
+                PertPath::create([
+                    'id_result' => $result->id_result,
+                    'id_master' => $taskId,
+                    'urutan'    => $i + 1
+                ]);
+            }
+
+            // cek max
+            // if ($midurasi > $maxDurasi) {
+            //     $maxDurasi = $durasi;
+            //     $criticalId = $result->id_result;
+            // }
+
+            // cek min
+            if ($minDurasi === null || $durasi < $minDurasi) {
+                $minDurasi = $durasi;
+                $criticalId = $result->id_result;
+            }
+        }
+
+
+        // =========================
+        // 7. SET CRITICAL PATH
+        // =========================
+        if ($criticalId) {
+            PertResult::where('id_result', $criticalId)
+                ->update(['is_critical' => 1]);
+        }
+    }
+
+    // GENERATE MODEL PATH (BEFORE-AFTER)
+    // private function generatePertModel($projectId)
+    // {
+    //     // 1. HAPUS DATA LAMA
+    //     PertResult::where('project_id', $projectId)->delete();
+
+    //     // 2. AMBIL INPUT
+    //     $inputs = PertInput::with('masterTask')
+    //         ->where('project_id', $projectId)
+    //         ->get();
+
+    //     // dump($inputs);
+
+    //     $expectedMap = [];
+
+    //     foreach ($inputs as $input) {
+    //         $expectedMap[$input->masterTask->kode] = $input->time_expected;
+    //     }
+
+    //     // dump($expectedMap);
+
+    //     // 3. AMBIL DEPENDENCY DARI DATABASE
+    //     $dependencies = PertMasterDependency::all();
+
+    //     // mapping: parent -> children
+    //     $graph = [];
+
+    //     foreach ($dependencies as $dep) {
+    //         $parent = $dep->ketergantungan; // sebelumnya
+    //         $child  = $dep->id_master;      // sesudahnya
+
+    //         if ($parent !== null) {
+    //             $graph[$parent][] = $child;
+    //         }
+    //     }
+
+    //     // 4. CARI START NODE (yang tidak punya dependency)
+    //     $allTasks = PertMasterTask::pluck('id_master')->toArray();
+    //     $hasParent = $dependencies->pluck('id_master')->toArray();
+
+    //     $startNodes = [];
+
+    //     foreach ($allTasks as $task) {
+    //         $isStart = true;
+
+    //         foreach ($dependencies as $dep) {
+    //             if ($dep->id_master == $task && $dep->ketergantungan !== null) {
+    //                 $isStart = false;
+    //                 break;
+    //             }
+    //         }
+
+    //         if ($isStart) {
+    //             $startNodes[] = $task;
+    //         }
+    //     }
+
+    //     // 5. TRACING PATH (BUKAN DFS, TAPI RUNUT)
+    //     $paths = [];
+
+    //     function buildPath($current, $graph, $path = [])
+    //     {
+    //         $path[] = $current;
+
+    //         if (!isset($graph[$current])) {
+    //             return [$path]; // end node
+    //         }
+
+    //         $allPaths = [];
+
+    //         foreach ($graph[$current] as $next) {
+    //             $subPaths = buildPath($next, $graph, $path);
+
+    //             foreach ($subPaths as $sp) {
+    //                 $allPaths[] = $sp;
+    //             }
+    //         }
+
+    //         return $allPaths;
+    //     }
+
+    //     // generate semua path dari start node
+    //     foreach ($startNodes as $start) {
+    //         $paths = array_merge($paths, buildPath($start, $graph));
+    //     }
+
+    //     // DEBUG HASIL PATH
+    //     // dd([
+    //     //     'graph' => $graph,
+    //     //     'startNodes' => $startNodes,
+    //     //     'paths' => $paths
+    //     // ]);
+    // }
+
+    private function getCriticalPath($projectId)
+    {
+        // Ambil result yang critical
+        $result = PertResult::where('project_id', $projectId)
+            ->where('is_critical', true)
+            ->first();
+
+        // dump($result);
+
+        if (!$result) {
+            return [];
+        }
+
+        // Ambil path berdasarkan urutan
+        $paths = PertPath::with('masterTask')
+            ->where('id_result', $result->id_result)
+            ->orderBy('urutan')
+            ->get();
+
+        // dump($paths);
+
+        // Ambil kode (lebih aman pakai mapping)
+        return $paths->map(function ($item) {
+            return optional($item->masterTask)->kode;
+        })->filter()->values()->toArray();
+
+        // dd($paths->map(function ($item) {
+        //     return optional($item->masterTask)->kode;
+        // }));
+    }
 }
+// ===================== //
+    // PENAMBAHAN MODUL PERT //
+    // ===================== //
+
+    // FETCH PERT MASTER TASK
+    // private function fetchPertMasterTask()
+    // {
+    //     $firestore = $this->getFirestore();
+
+    //     $tasks = $firestore->collection('PERT_Master_Task')->documents();
+
+    //     $data = [];
+
+    //     foreach ($tasks as $task) {
+    //         if ($task->exists()) {
+
+    //             $row = $task->data();
+
+    //             $data[] = [
+    //                 'id' => $task->id(),
+    //                 'kode' => $row['kode'],
+    //                 'nama_pekerjaan' => $row['nama_pekerjaan'],
+    //                 'realistis' => $row['realistis'],
+    //                 'ketergantungan' => $row['ketergantungan']
+    //             ];
+    //         }
+    //     }
+
+    //     usort($data, fn($a, $b) => strcmp($a['kode'], $b['kode']));
+
+    //     return $data;
+    // }
+
+    // private function fetchPertInput($projectRef)
+    // {
+    //     $firestore = $this->getFirestore();
+
+    //     $docs = $firestore
+    //         ->collection('PERT_Input')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     $pertInput = [];
+
+    //     foreach ($docs as $doc) {
+
+    //         if (!$doc->exists()) continue;
+
+    //         $data = $doc->data();
+
+    //         $kode = $data['kode'] ?? null;
+    //         $te = $data['time_expected'] ?? 0;
+
+    //         if ($kode) {
+    //             $pertInput[$kode] = $te;
+    //         }
+    //     }
+
+    //     return $pertInput;
+    // }
+
+    // // INPUT OPTIMIS & PESIMIS
+    // public function storePert(Request $request, $projectId)
+    // {
+    //     // dump('CEK INPUTAN FORM');
+    //     // dump($request->all());
+    //     $firestore = $this->getFirestore();
+
+    //     $projectRef = $firestore
+    //         ->collection('All_Project_TA')
+    //         ->document($projectId);
+
+    //     foreach ($request->kode as $i => $kode) {
+
+    //         $optimis   = (float) $request->optimis[$i];
+    //         $realistis = (float) $request->realistis[$i];
+    //         $pesimis   = (float) $request->pesimis[$i];
+
+    //         $timeExpected =
+    //             ($optimis + (4 * $realistis) + $pesimis) / 6;
+
+    //         // dump('CEK TIME EXPECTED');
+    //         // dump([
+    //         //     'kode' => $kode,
+    //         //     'optimis' => $optimis,
+    //         //     'realistis' => $realistis,
+    //         //     'pesimis' => $pesimis,
+    //         //     'time_expected' => $timeExpected
+    //         // ]);
+
+    //         // dump('CEK DATA YANG AKAN DISIMPAN');
+    //         // dump([
+    //         //     'project_id' => $projectId,
+    //         //     'kode' => $kode,
+    //         //     'optimis' => $optimis,
+    //         //     'realistis' => $realistis,
+    //         //     'pesimis' => $pesimis,
+    //         //     'time_expected' => $timeExpected
+    //         // ]);
+
+    //         $firestore->collection('PERT_Input')->add([
+    //             'project_id' => $projectRef,
+    //             'kode' => $kode,
+    //             'optimis' => $optimis,
+    //             'realistis' => $realistis,
+    //             'pesimis' => $pesimis,
+    //             'time_expected' => $timeExpected
+    //         ]);
+    //     }
+
+    //     // dump('CEK DATA COLLECTION PERT_Input');
+
+    //     $checkInput = $firestore
+    //         ->collection('PERT_Input')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     $dataCheck = [];
+
+    //     foreach ($checkInput as $doc) {
+    //         if ($doc->exists()) {
+    //             $dataCheck[] = $doc->data();
+    //         }
+    //     }
+
+    //     // dump($dataCheck);
+
+    //     $this->generatePertModel($projectId);
+
+    //     // return back()->with('success', 'Perhitungan PERT berhasil disimpan');
+    //     // return redirect()
+    //     //     ->route('superadmin.acc_detail', $projectId)
+    //     //     ->with('success', 'Perhitungan PERT berhasil disimpan');
+    // }
+
+    // // GENERATE MODEL PATH (BEFORE-AFTER)
+    // private function generatePertModel($projectId)
+    // {
+    //     $firestore = $this->getFirestore();
+
+    //     $projectRef = $firestore
+    //         ->collection('All_Project_TA')
+    //         ->document($projectId);
+
+    //     dump('Project ID:', $projectId);
+
+    //     // =========================
+    //     // 1. HAPUS DATA LAMA
+    //     // =========================
+    //     // dump('=== Hapus data lama ===');
+
+    //     $old = $firestore
+    //         ->collection('PERT_Model_Result')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     foreach ($old as $doc) {
+    //         if ($doc->exists()) {
+    //             // dump('Hapus doc:', $doc->id());
+
+    //             $firestore->collection('PERT_Model_Result')
+    //                 ->document($doc->id())
+    //                 ->delete();
+    //         }
+    //     }
+
+    //     // =========================
+    //     // 2. AMBIL TIME EXPECTED
+    //     // =========================
+    //     dump('== Ambil time expected ===');
+
+    //     $inputDocs = $firestore
+    //         ->collection('PERT_Input')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     $expectedMap = [];
+
+    //     foreach ($inputDocs as $doc) {
+
+    //         if (!$doc->exists()) continue;
+
+    //         $row = $doc->data();
+
+    //         $expectedMap[$row['kode']] = $row['time_expected'];
+
+    //         dump('Data PERT_Input:', [
+    //             'kode' => $row['kode'],
+    //             'time_expected' => $row['time_expected']
+    //         ]);
+    //     }
+
+    //     dump('Expected Map:', $expectedMap);
+
+    //     // =========================
+    //     // 3. PATH ATAU JALUR
+    //     // =========================
+    //     dump('=== Path atau jalur ===');
+
+    //     $paths = [
+    //         ['A', 'B', 'C', 'D', 'F', 'G', 'I', 'J'],
+    //         ['A', 'B', 'C', 'D', 'F', 'H', 'I', 'J'],
+    //         ['A', 'B', 'E', 'F', 'G', 'I', 'J'],
+    //         ['A', 'B', 'E', 'F', 'H', 'I', 'J'],
+    //         ['A', 'B', 'C', 'D', 'F', 'G', 'J'],
+    //         ['A', 'B', 'E', 'F', 'G', 'J'],
+    //     ];
+
+    //     dump('Daftar Path:', $paths);
+
+    //     // =========================
+    //     // 4. HITUNG TOTAL DURASI
+    //     // =========================
+    //     dump('=== Hitung durasi tiap path ===');
+
+    //     $results = [];
+
+    //     foreach ($paths as $index => $path) {
+
+    //         $total = 0;
+
+    //         dump("Path ke-" . ($index + 1), $path);
+
+    //         foreach ($path as $kode) {
+
+    //             $durasi = $expectedMap[$kode] ?? 0;
+
+    //             dump("Kode: $kode, Durasi:", $durasi);
+
+    //             $total += $durasi;
+    //         }
+
+    //         dump('Total durasi path:', $total);
+
+    //         $results[] = [
+    //             'jalur' => $path,
+    //             'tot_durasi' => $total
+    //         ];
+    //     }
+
+    //     dump('Semua hasil path:', $results);
+
+    //     // =========================
+    //     // 5. CARI CRITICAL PATH
+    //     // =========================
+    //     dump('=== Cari durasi maksimum (Jalur Kritis) ===');
+
+    //     $maxDurasi = max(array_column($results, 'tot_durasi'));
+
+    //     dump('Durasi maksimum:', $maxDurasi);
+
+    //     // =========================
+    //     // 6. SIMPAN KE FIRESTORE
+    //     // =========================
+    //     dump('=== Simpan ke Firestore ===');
+
+    //     foreach ($results as $model) {
+
+    //         $isCritical = $model['tot_durasi'] == $maxDurasi;
+
+    //         dump('Simpan model:', [
+    //             'jalur' => $model['jalur'],
+    //             'total' => $model['tot_durasi'],
+    //             'is_critical' => $isCritical
+    //         ]);
+
+    //         $firestore
+    //             ->collection('PERT_Model_Result')
+    //             ->add([
+    //                 'project_id' => $projectRef,
+    //                 'jalur' => $model['jalur'],
+    //                 'tot_durasi' => $model['tot_durasi'],
+    //                 'is_critical' => $isCritical
+    //             ]);
+    //     }
+    // }
+
+    // private function getCriticalPath($projectId)
+    // {
+    //     $firestore = $this->getFirestore();
+
+    //     $projectRef = $firestore
+    //         ->collection('All_Project_TA')
+    //         ->document($projectId);
+
+    //     $docs = $firestore
+    //         ->collection('PERT_Model_Result')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->where('is_critical', '=', true)
+    //         ->documents();
+
+    //     foreach ($docs as $doc) {
+    //         if ($doc->exists()) {
+    //             return $doc->data()['jalur'];
+    //         }
+    //     }
+
+    //     return [];
+    // }
+
+// GENERATE MODEL PATH (DFS)
+    // private function generatePertModel($projectId)
+    // {
+    //     // dump('CEK PANGGIL FUNCTION generatePertModel');
+    //     // dump($projectId);
+
+    //     $firestore = $this->getFirestore();
+
+    //     $projectRef = $firestore
+    //         ->collection('All_Project_TA')
+    //         ->document($projectId);
+
+    //     $old = $firestore
+    //         ->collection('PERT_Model_Result')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     foreach ($old as $doc) {
+    //         if ($doc->exists()) {
+    //             $firestore->collection('PERT_Model_Result')
+    //                 ->document($doc->id())
+    //                 ->delete();
+    //         }
+    //     }
+    //     /*
+    //     =================================
+    //     AMBIL MASTER TASK
+    //     =================================
+    //     */
+
+    //     $masterDocs = $firestore
+    //         ->collection('PERT_Master_Task')
+    //         ->documents();
+
+    //     $tasks = [];
+    //     $ketergantungan = [];
+
+    //     foreach ($masterDocs as $doc) {
+
+    //         if (!$doc->exists()) continue;
+
+    //         $row = $doc->data();
+
+    //         $kode = $row['kode'];
+
+    //         $tasks[$kode] = $row;
+
+    //         $ketergantungan[$kode] = $row['ketergantungan'] ?? [];
+    //     }
+
+    //     // dump('CEK ISI MASTER TASK');
+    //     // dump($tasks);
+    //     // dump($ketergantungan);
+
+    //     /*
+    //     =================================
+    //     AMBIL EXPECTED TIME
+    //     =================================
+    //     */
+
+    //     $inputDocs = $firestore
+    //         ->collection('PERT_Input')
+    //         ->where('project_id', '=', $projectRef)
+    //         ->documents();
+
+    //     $expectedMap = [];
+
+    //     foreach ($inputDocs as $doc) {
+
+    //         if (!$doc->exists()) continue;
+
+    //         $row = $doc->data();
+
+    //         $expectedMap[$row['kode']] =
+    //             $row['time_expected'];
+    //     }
+
+    //     // dump('CEK EXPECTED TIME TIAP KODE');
+    //     // dump($expectedMap);
+
+    //     /*
+    //     =================================
+    //     BANGUN GRAPH
+    //     =================================
+    //     */
+
+    //     $graph = [];
+
+    //     foreach ($ketergantungan as $task => $deps) {
+
+    //         foreach ($deps as $dep) {
+
+    //             $graph[$dep][] = $task;
+    //         }
+    //     }
+
+    //     // dump('CEK GRAPH DEPENDENCY');
+    //     // dump($graph);
+
+    //     /*
+    //     =================================
+    //     CARI START NODE
+    //     =================================
+    //     */
+
+    //     $startNodes = [];
+
+    //     foreach ($tasks as $kode => $task) {
+
+    //         if (empty($ketergantungan[$kode])) {
+    //             $startNodes[] = $kode;
+    //         }
+    //     }
+
+    //     // dump('CEK START NODE');
+    //     // dump($startNodes);
+
+    //     /*
+    //     =================================
+    //     DFS UNTUK SEMUA PATH
+    //     =================================
+    //     */
+
+    //     $paths = [];
+
+    //     $dfs = function ($node, $path) use (&$dfs, &$graph, &$paths) {
+
+    //         $path[] = $node;
+
+    //         if (!isset($graph[$node])) {
+
+    //             $paths[] = $path;
+    //             return;
+    //         }
+
+    //         foreach ($graph[$node] as $next) {
+
+    //             $dfs($next, $path);
+    //         }
+    //     };
+
+    //     foreach ($startNodes as $start) {
+
+    //         $dfs($start, []);
+    //     }
+
+    //     // dump('CEK SEMUA JALUR TIAP MODEL');
+    //     // dump($paths);
+
+    //     /*
+    //     =================================
+    //     HITUNG TOTAL DURASI & CARI MAX DURASI
+    //     =================================
+    //     */
+
+    //     $results = [];
+
+    //     foreach ($paths as $path) {
+
+    //         $total = 0;
+
+    //         foreach ($path as $kode) {
+
+    //             $total += $expectedMap[$kode] ?? 0;
+    //         }
+
+    //         $results[] = [
+    //             'jalur' => $path,
+    //             'tot_durasi' => $total
+    //         ];
+    //     }
+
+    //     // dump('CEK TOTAL DURASI TIAP MODEL');
+    //     // dump($results);
+
+    //     $maxDurasi = max(array_column($results, 'tot_durasi'));
+
+    //     // dump('CEK DURASI TERBESAR (JALUR KRITIS)');
+    //     // dump($maxDurasi);
+
+    //     /*
+    //     =================================
+    //     SIMPAN SEMUA MODEL
+    //     =================================
+    //     */
+
+    //     foreach ($results as $model) {
+
+    //         $isCritical = $model['tot_durasi'] == $maxDurasi;
+
+    //         // dump('DATA MODEL YANG AKAN DISIMPAN');
+    //         // dump([
+    //         //     'jalur' => $model['jalur'],
+    //         //     'tot_durasi' => $model['tot_durasi'],
+    //         //     'is_critical' => $isCritical
+    //         // ]);
+
+    //         $firestore
+    //             ->collection('PERT_Model_Result')
+    //             ->add([
+    //                 'project_id' => $projectRef,
+    //                 'jalur' => $model['jalur'],
+    //                 'tot_durasi' => $model['tot_durasi'],
+    //                 'is_critical' => $isCritical
+    //             ]);
+    //     }
+    // }

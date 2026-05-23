@@ -49,7 +49,7 @@
                             <td>
                                 <a href="#" class="btn-edit-user" data-id="{{ $user['id'] }}"
                                     data-nik="{{ $user['nik'] }}" data-nama="{{ $user['nama'] }}"
-                                    data-uker="{{ $user['uker'] }}" data-role="{{ $user['role_id'] }}"
+                                    data-uker="{{ $user['uker_id'] }}" data-role="{{ $user['role_id'] }}"
                                     data-password="{{ $user['password'] }}">
                                     <img src="{{ asset('assets/edit.png') }}" alt="Edit"
                                         style="width:20px;height:20px;">
@@ -91,18 +91,24 @@
                         required>
                 </div>
 
-                <div class="edit-uker">
-                    <label for="uker" class="label-uker">Unit Kerja:</label>
-                    <input type="text" id="uker" name="uker" class="input-field"
-                        placeholder="Masukkan Unit Kerja User" required>
-                </div>
-
                 <div class="edit-role">
                     <label for="role" class="label-role">Role:</label>
                     <select id="role" name="role" class="select-field" required>
                         <option value="" disabled selected hidden>Pilih Role User</option>
                         @foreach ($role_doc as $rl)
                             <option value="{{ $rl['id'] }}">{{ $rl['role'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="edit-uker">
+                    <label for="uker" class="label-uker">Unit Kerja:</label>
+                    <select id="uker" name="uker" class="select-field" required>
+                        <option value="" disabled selected hidden>Pilih Unit Kerja</option>
+                        @foreach ($uker_doc as $uk)
+                            <option value="{{ $uk['id'] }}">
+                                {{ $uk['unit'] }}
+                            </option>
                         @endforeach
                     </select>
                 </div>
@@ -141,16 +147,20 @@
                     <input type="text" id="edit_nama" name="nama" class="input-field">
                 </div>
 
-                <div class="edit-uker">
-                    <label for="edit_uker" class="label-uker">Unit Kerja:</label>
-                    <input type="text" id="edit_uker" name="uker" class="input-field">
-                </div>
-
                 <div class="edit-role">
                     <label for="edit_role" class="label-role">Role:</label>
                     <select id="edit_role" name="role" class="select-field">
                         @foreach ($role_doc as $rl)
                             <option value="{{ $rl['id'] }}">{{ $rl['role'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="edit-uker">
+                    <label for="edit_uker" class="label-uker">Unit Kerja:</label>
+                    <select id="edit_uker" name="uker" class="select-field">
+                        @foreach ($uker_doc as $uk)
+                            <option value="{{ $uk['id'] }}">{{ $uk['unit'] }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -545,11 +555,16 @@
                     saveBtn.disabled = true;
 
                     try {
-                        const res = await fetch(actionUrl, { method: "POST", body: formData });
-                        const data = await res.json().catch(() => ({})); // antisipasi jika response bukan JSON
+                        const res = await fetch(actionUrl, {
+                            method: "POST",
+                            body: formData
+                        });
+                        const data = await res.json().catch(() =>
+                            ({})); // antisipasi jika response bukan JSON
 
                         if (!res.ok || (data.success === false)) {
-                            throw new Error(data.message || "Terjadi kesalahan saat menambahkan user.");
+                            throw new Error(data.message ||
+                                "Terjadi kesalahan saat menambahkan user.");
                         }
 
                         // 3️⃣ Tutup loading dan tampilkan alert berhasil
@@ -579,7 +594,7 @@
 
         // SWEETALERT UNTUK DELETE USER
         document.querySelectorAll('.form-delete').forEach(form => {
-            form.addEventListener('submit', async function (e) {
+            form.addEventListener('submit', async function(e) {
                 e.preventDefault();
 
                 Swal.fire({
@@ -607,18 +622,22 @@
                         try {
                             const actionUrl = form.action;
                             const formData = new FormData(form);
-                            const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                            const token = document.querySelector('meta[name="csrf-token"]')
+                                .getAttribute('content');
 
                             const res = await fetch(actionUrl, {
                                 method: 'POST',
-                                headers: { 'X-CSRF-TOKEN': token },
+                                headers: {
+                                    'X-CSRF-TOKEN': token
+                                },
                                 body: formData
                             });
 
                             const data = await res.json().catch(() => ({}));
 
                             if (!res.ok || data.success === false)
-                                throw new Error(data.message || 'Terjadi kesalahan saat menghapus user.');
+                                throw new Error(data.message ||
+                                    'Terjadi kesalahan saat menghapus user.');
 
                             // 2️⃣ Tutup loading & tampilkan alert sukses
                             Swal.fire({
@@ -635,7 +654,8 @@
                             Swal.fire({
                                 icon: 'error',
                                 title: 'Gagal!',
-                                text: err.message || 'Terjadi kesalahan saat menghapus user.',
+                                text: err.message ||
+                                    'Terjadi kesalahan saat menghapus user.',
                                 confirmButtonColor: '#C8170D'
                             });
                         }
@@ -645,7 +665,7 @@
         });
 
         // SWEETALERT UNTUK EDIT USER
-        document.getElementById("editUserForm").addEventListener("submit", async function (e) {
+        document.getElementById("editUserForm").addEventListener("submit", async function(e) {
             e.preventDefault();
 
             const editUserModal = document.getElementById("editUserModal");
@@ -681,11 +701,16 @@
                     saveBtn.disabled = true;
 
                     try {
-                        const res = await fetch(actionUrl, { method: "POST", body: formData });
-                        const data = await res.json().catch(() => ({})); // antisipasi jika bukan JSON
+                        const res = await fetch(actionUrl, {
+                            method: "POST",
+                            body: formData
+                        });
+                        const data = await res.json().catch(() =>
+                            ({})); // antisipasi jika bukan JSON
 
                         if (!res.ok || data.success === false)
-                            throw new Error(data.message || "Terjadi kesalahan saat menyimpan perubahan user.");
+                            throw new Error(data.message ||
+                                "Terjadi kesalahan saat menyimpan perubahan user.");
 
                         // 3️⃣ Tutup loading & tampilkan alert sukses
                         Swal.fire({
@@ -702,12 +727,45 @@
                         Swal.fire({
                             icon: "error",
                             title: "Gagal!",
-                            text: err.message || "Terjadi kesalahan saat menyimpan perubahan user.",
+                            text: err.message ||
+                                "Terjadi kesalahan saat menyimpan perubahan user.",
                             confirmButtonColor: "#C8170D"
                         });
                     } finally {
                         saveBtn.disabled = false;
                     }
+                }
+            });
+        });
+
+        const roleSelect = document.getElementById('role');
+        const ukerSelect = document.getElementById('uker');
+
+        // Simpan semua option uker (kecuali placeholder)
+        const allUkerOptions = Array.from(ukerSelect.options).slice(1);
+
+        roleSelect.addEventListener('change', function() {
+            const roleId = this.value;
+
+            // Reset uker
+            ukerSelect.innerHTML = '<option value="" disabled selected hidden>Pilih Unit Kerja</option>';
+
+            allUkerOptions.forEach(option => {
+                const ukerId = parseInt(option.value);
+
+                // SUPER ADMIN → Unit_Kerja/1
+                if (roleId == '1' && ukerId === 1) {
+                    ukerSelect.appendChild(option);
+                }
+
+                // TELKOM AKSES → Unit_Kerja/2–26
+                else if (roleId == '2' && ukerId >= 2 && ukerId <= 26) {
+                    ukerSelect.appendChild(option);
+                }
+
+                // MITRA → Unit_Kerja/27–34
+                else if (roleId == '3' && ukerId >= 27 && ukerId <= 34) {
+                    ukerSelect.appendChild(option);
                 }
             });
         });

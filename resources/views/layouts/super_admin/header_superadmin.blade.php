@@ -14,10 +14,10 @@
             style="height:60px; border-radius:50%; margin-right:12px;">
         <div>
             <div style="font-weight:400; color:#133995; margin-bottom:4px;">
-                {{ $user['nik'] }}
+                {{ session('user_nik') }}
             </div>
             <div style="color:#133995; font-weight:400;">
-                {{ $user['nama'] }}
+                {{ session('user_nama') }}
             </div>
         </div>
     </div>

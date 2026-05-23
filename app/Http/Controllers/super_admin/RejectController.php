@@ -17,7 +17,7 @@ class RejectController extends Controller
     {
         return new FirestoreClient([
             'projectId' => env('FIREBASE_PROJECT_ID'),
-            'keyFilePath' => base_path(env('FIREBASE_CREDENTIALS')),
+            'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),
         ]);
     }
 
@@ -26,7 +26,11 @@ class RejectController extends Controller
         $foto_doc = $this->fetchFotoData();
         $pending_doc = $this->fetchPendingData();
         $qe_doc = $this->fetchQEData();
-        [$reject_doc, $grandTotal] = $this->fetchRejectData($request);
+
+        $start = $request->query('start');
+        $end = $request->query('end');
+
+        [$reject_doc, $grandTotal] = $this->fetchRejectData($start, $end);
 
         return view('super_admin.reject.reject_superadmin', compact('reject_doc', 'grandTotal', 'qe_doc'));
     }
@@ -119,12 +123,9 @@ class RejectController extends Controller
                     }
                 }
 
-                $rejectFotoRef = $data['ta_project_foto_id'];
-                $rejectPendingRef = $data['ta_project_pending_id'];
+
                 $rejectQERef = $data['ta_project_qe_id'];
 
-                $fotoData = $this->getReferenceData($rejectFotoRef);
-                $pendingData = $this->getReferenceData($rejectPendingRef);
                 $qeData = $this->getReferenceData($rejectQERef);
 
                 $tglUpload = $this->formatDate($data['ta_project_waktu_upload'] ?? null);
@@ -229,7 +230,7 @@ class RejectController extends Controller
         }
 
         $data = $doc->data();
-        $fotoData = $this->getReferenceData($data['ta_project_foto_id'] ?? null);
+        $fotoData = $data['ta_project_foto'] ?? [];
         $pendingData = $this->getReferenceData($data['ta_project_pending_id'] ?? null);
         $qeData = $this->getReferenceData($data['ta_project_qe_id'] ?? null);
 
@@ -242,11 +243,15 @@ class RejectController extends Controller
             ->documents();
 
         $detail = [];
+        $totalMaterial = 0;
+        $totalJasa = 0;
 
         foreach ($detailDocs as $d) {
             if (!$d->exists()) continue;
 
             $row = $d->data();
+
+            // Fetch data from Data_Project_TA
             $designatorRef = $row['ta_detail_ta_id'];
             $designatorData = $this->getReferenceData($designatorRef);
 
@@ -254,20 +259,41 @@ class RejectController extends Controller
             $hargaJasa = $designatorData['ta_harga_jasa'] ?? 0;
             $volume = $row['ta_detail_volume'] ?? 0;
 
+            $totalM = $hargaMaterial * $volume;
+            $totalJ = $hargaJasa * $volume;
+
+            $totalMaterial += $totalM;
+            $totalJasa += $totalJ;
+
             $detail[] = (object)[
-                'id'             => $d->id(),
+                'id' => $d->id(),
                 'designator' => $designatorData['ta_designator'] ?? '',
                 'uraian' => $designatorData['ta_uraian_pekerjaan'] ?? '',
                 'satuan' => $designatorData['ta_satuan'] ?? '',
                 'harga_material' => $hargaMaterial,
                 'harga_jasa' => $hargaJasa,
                 'volume' => $volume,
-                'total_material' => $hargaMaterial * $volume,
-                'total_jasa' => $hargaJasa * $volume,
+                'total_material' => $totalM,
+                'total_jasa' => $totalJ,
             ];
         }
 
-        $totals = $this->hitungTotal($detailDocs);
+        $total = $totalMaterial + $totalJasa;
+        $ppn = $total * 0.11;
+        $grand = $total + $ppn;
+
+        // Update project total in Firestore
+        $docRef->update([
+            ['path' => 'ta_project_total', 'value' => $grand],
+        ]);
+
+        $totals = [
+            'material' => $totalMaterial,
+            'jasa' => $totalJasa,
+            'total' => $total,
+            'ppn' => $ppn,
+            'grand' => $grand,
+        ];
 
         return view('super_admin.reject.detail_reject', [
             'reject' => [
@@ -522,7 +548,10 @@ class RejectController extends Controller
                 ['path' => 'ta_project_waktu_upload', 'value' => Carbon::now()],
             ]);
 
-            return back()->with('success', 'Revisi berhasil diupload! Data lama diganti kecuali QE & deskripsi (tetap).');
+            return response()->json([
+                'success' => true,
+                'message' => 'Revisi berhasil diupload!'
+            ]);
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
@@ -537,9 +566,10 @@ class RejectController extends Controller
         $detailDoc = $detailRef->snapshot();
 
         if (!$detailDoc->exists()) {
-            return redirect()
-                ->route('superadmin.reject_detail', $id)
-                ->with('error', 'Data detail tidak ditemukan.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Data detail tidak ditemukan.'
+            ], 404);
         }
 
         // Hapus dokumen dari Firestore
@@ -558,9 +588,10 @@ class RejectController extends Controller
             ['path' => 'ta_project_total', 'value' => $totals['grand']]
         ]);
 
-        return redirect()
-            ->route('superadmin.reject_detail', $id)
-            ->with('success', 'Material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Material berhasil dihapus.'
+        ]);
     }
 
     public function destroyProject($id)
@@ -590,7 +621,10 @@ class RejectController extends Controller
         // Hapus data project utama
         $projectRef->delete();
 
-        return redirect()->route('superadmin.reject')->with('success', 'Data project dan seluruh detail material berhasil dihapus.');
+        return response()->json([
+            'success' => true,
+            'message' => 'Data project dan seluruh material berhasil dihapus.'
+        ]);
     }
 
     private function formatDate($timestamp)

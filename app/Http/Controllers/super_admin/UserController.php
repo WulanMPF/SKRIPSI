@@ -12,7 +12,7 @@ class UserController extends Controller
     {
         return new FirestoreClient([
             'projectId' => env('FIREBASE_PROJECT_ID'),
-            'keyFilePath' => base_path(env('FIREBASE_CREDENTIALS')),
+            'keyFilePath' => storage_path('app/firebase/luwina-381dd-firebase-adminsdk-fbsvc-d4615d8138.json'),
         ]);
     }
 
@@ -20,8 +20,11 @@ class UserController extends Controller
     {
         $usr_doc = $this->fetchUserData();
         $role_doc = $this->fetchRoleData();
+        $uker_doc = $this->fetchUkerData();
 
-        return view('super_admin.user.user_superadmin', compact('usr_doc', 'role_doc'));
+        $user = $usr_doc[0] ?? null; // ⚠️ hanya untuk test
+
+        return view('super_admin.user.user_superadmin', compact('usr_doc', 'role_doc', 'uker_doc', 'user'));
     }
 
     private function fetchUserData()
@@ -33,14 +36,17 @@ class UserController extends Controller
             if ($docu->exists()) {
                 $data = $docu->data();
                 $userRoleRef = $data['user_role'];
+                $userUkerRef = $data['user_sto'];
 
                 $roleData = $this->getReferenceData($userRoleRef);
+                $ukerData = $this->getReferenceData($userUkerRef);
 
                 $usr_doc[] = [
                     'id' => $docu->id(),
                     'nik' => $data['user_nik'],
                     'nama' => $data['user_nama'],
-                    'uker' => $data['user_sto'],
+                    'uker' => $ukerData ? $ukerData['Unit'] : null,
+                    'uker_id' => $userUkerRef ? $userUkerRef->id() : null,
                     'password' => $data['user_password'],
                     'role' => $roleData ? $roleData['role'] : null,
                     'role_id' => $roleData ? $userRoleRef->id() : null,
@@ -70,6 +76,30 @@ class UserController extends Controller
         return $role_doc;
     }
 
+    private function fetchUkerData()
+    {
+        $uker_collection = $this->getFirestore()
+            ->collection('Unit_Kerja')
+            ->documents();
+
+        $uker_doc = [];
+
+        foreach ($uker_collection as $docu) {
+            if ($docu->exists()) {
+                $data = $docu->data();
+
+                $uker_doc[] = [
+                    'id'   => $docu->id(),       // contoh: "1"
+                    'unit' => $data['Unit'] ?? null, // HARUS 'Unit'
+                ];
+            }
+        }
+        // dd($uker_doc);
+
+        return $uker_doc;
+    }
+
+
     private function getReferenceData($ref)
     {
         if ($ref && method_exists($ref, 'snapshot')) {
@@ -90,13 +120,16 @@ class UserController extends Controller
         ]);
 
         $firestore = $this->getFirestore();
+
+        // 🔑 BUAT REFERENCE
         $roleRef = $firestore->collection('Role')->document($request->role);
+        $ukerRef = $firestore->collection('Unit_Kerja')->document($request->uker);
 
         $firestore->collection('User')->add([
             'user_nik'      => $request->nik,
             'user_nama'     => $request->nama,
-            'user_sto'      => $request->uker,
-            'user_role'     => $roleRef,
+            'user_sto'      => $ukerRef, // ✅ REFERENCE
+            'user_role'     => $roleRef, // ✅ REFERENCE
             'user_password' => $request->password,
         ]);
 
@@ -115,12 +148,13 @@ class UserController extends Controller
 
         $firestore = $this->getFirestore();
         $roleRef = $firestore->collection('Role')->document($request->role);
+        $ukerRef = $firestore->collection('Unit_Kerja')->document($request->uker);
 
         $firestore->collection('User')->document($id)->set([
             'user_nik'      => $request->nik,
             'user_nama'     => $request->nama,
-            'user_sto'      => $request->uker,
-            'user_role'     => $roleRef,
+            'user_sto'      => $ukerRef,   // ✅
+            'user_role'     => $roleRef,   // ✅
             'user_password' => $request->password,
         ], ['merge' => true]);
 
