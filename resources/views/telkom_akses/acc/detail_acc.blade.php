@@ -62,11 +62,6 @@
                                     <td>{{ number_format($item->total_material, 0, ',', '.') }}</td>
                                     <td>{{ number_format($item->total_jasa, 0, ',', '.') }}</td>
                                     <td>
-                                        {{-- @forelse($acc['foto']['sebelum'] ?? [] as $foto)
-                                        <img src="{{ $foto }}" class="foto-item">
-                                    @empty
-                                        <span>-</span>
-                                    @endforelse --}}
                                         @if (isset($acc['foto']['sebelum'][$item->designator]))
                                             @foreach ($acc['foto']['sebelum'][$item->designator] as $foto)
                                                 <img src="{{ $foto }}" class="foto-item zoomable">
@@ -76,11 +71,6 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{-- @forelse($acc['foto']['sesudah'] ?? [] as $foto)
-                                        <img src="{{ $foto }}" class="foto-item">
-                                    @empty
-                                        <span>-</span>
-                                    @endforelse --}}
                                         @if (isset($acc['foto']['sesudah'][$item->designator]))
                                             @foreach ($acc['foto']['sesudah'][$item->designator] as $foto)
                                                 <img src="{{ $foto }}" class="foto-item zoomable">

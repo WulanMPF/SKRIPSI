@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Cloudinary\Cloudinary;
 // use Google\Cloud\Firestore\DocumentSnapshot;
+use App\Models\PertMitraTask;
 
 class AccController extends Controller
 {
@@ -242,6 +243,9 @@ class AccController extends Controller
 
         $data = $doc->data();
 
+        // PERT //
+        $mitraTasks = PertMitraTask::where('project_id', $id)->get();
+
         // --- Foto evident (ambil semua dokumen by project_id)
         $fotoDocs = $firestore->collection('Foto_Evident')
             ->where('project_id', '=', $id)
@@ -372,6 +376,9 @@ class AccController extends Controller
                 'detail'          => $detail,
             ],
             'totals' => $totals,
+
+            // PERT //
+            'mitraTasks' => $mitraTasks,
         ]);
     }
 

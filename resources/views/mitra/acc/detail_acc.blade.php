@@ -84,11 +84,6 @@
                                     <td>{{ number_format($item->total_material, 0, ',', '.') }}</td>
                                     <td>{{ number_format($item->total_jasa, 0, ',', '.') }}</td>
                                     <td>
-                                        {{-- @forelse($acc['foto']['sebelum'] ?? [] as $foto)
-                                        <img src="{{ $foto }}" class="foto-item">
-                                    @empty
-                                        <span>-</span>
-                                    @endforelse --}}
                                         @if (isset($acc['foto']['sebelum'][$item->designator]))
                                             @foreach ($acc['foto']['sebelum'][$item->designator] as $foto)
                                                 <img src="{{ $foto }}" class="foto-item zoomable">
@@ -98,11 +93,6 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{-- @forelse($acc['foto']['sesudah'] ?? [] as $foto)
-                                        <img src="{{ $foto }}" class="foto-item">
-                                    @empty
-                                        <span>-</span>
-                                    @endforelse --}}
                                         @if (isset($acc['foto']['sesudah'][$item->designator]))
                                             @foreach ($acc['foto']['sesudah'][$item->designator] as $foto)
                                                 <img src="{{ $foto }}" class="foto-item zoomable">
@@ -167,58 +157,6 @@
                 </form>
             </div>
         </div>
-
-        <!-- Pop Up Done Upload Foto -->
-        {{-- <div id="doneModal" class="modal" style="display:none;">
-            <div class="modal-content">
-                <h3 id="modalTitle" style="text-align:center; color:#133995;">Upload Foto Evident Sebelum Pengerjaan</h3>
-                <p id="modalDesc" style="text-align:center;">Silahkan unggah foto evident <b>sebelum</b> pengerjaan</p>
-
-                <form id="formUploadFoto" method="POST" action="{{ route('mitra.acc.storeFoto', $acc['id']) }}"
-                    enctype="multipart/form-data">
-                    @csrf
-
-                    <!-- Drop Zone / Upload -->
-                    <div id="dropZone"
-                        style="border:2px dashed #ccc; border-radius:10px; padding:20px; text-align:center; margin-bottom:20px;">
-                        <input type="file" name="foto_sebelum[]" id="imagesSebelum" multiple accept="image/*" hidden>
-                        <input type="file" name="foto_proses[]" id="imagesProses" multiple accept="image/*" hidden>
-                        <input type="file" name="foto_sesudah[]" id="imagesSesudah" multiple accept="image/*" hidden>
-                        <label for="imagesSebelum" style="cursor:pointer; display:block; color:#595961;">
-                            <i class="fa fa-cloud-upload-alt" style="font-size:24px; margin-bottom:8px;"></i><br>
-                            <span>Upload Foto Sebelum Pengerjaan<br>JPEG/PNG up to 10MB</span>
-                            <br><br>
-                            <button type="button" id="browseBtn" class="btn-browse">Browse</button>
-                        </label>
-                    </div>
-
-                    <!-- Preview Gambar per Step -->
-                    <div id="previewSebelum" class="previewImages"
-                        style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center;"></div>
-                    <div id="previewProses" class="previewImages"
-                        style="display:none; flex-wrap:wrap; gap:10px; justify-content:center;"></div>
-                    <div id="previewSesudah" class="previewImages"
-                        style="display:none; flex-wrap:wrap; gap:10px; justify-content:center;"></div>
-
-                    <!-- Tombol Navigasi -->
-                    <div style="display:flex; justify-content:space-between; margin-top:20px;">
-                        <!-- Container kiri -->
-                        <div id="leftBtns">
-                            <button type="button" id="cancelBtn" class="modal-btn cancel">Cancel</button>
-                            <button type="button" id="prevBtn" class="modal-btn prev"
-                                style="display:none;">Previous</button>
-                        </div>
-
-                        <!-- Container kanan -->
-                        <div id="rightBtns">
-                            <button type="button" id="nextBtn" class="modal-btn next">Next</button>
-                            <button type="submit" id="uploadBtn" class="modal-btn upload"
-                                style="display:none;">Upload</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div> --}}
 
         <div id="doneModal" class="modal" style="display:none;">
             <div class="modal-content" style="max-width:1500px;">
@@ -303,12 +241,6 @@
                         </div>
                     </div>
 
-                    <!-- Tombol Add / Remove -->
-                    {{-- <div class="action-btns">
-                        <button type="button" class="btn-add">+</button>
-                        <button type="button" class="btn-remove">-</button>
-                    </div> --}}
-
                     <!-- Footer Buttons -->
                     <div style="display:flex; justify-content:space-between; margin-top:20px;">
                         <!-- Tombol kiri -->
@@ -370,6 +302,44 @@
                 </div>
             </div>
         @endif
+
+        {{-- =========================
+        MODUL PERT 
+        ========================= --}}
+
+        <div class="rekap-section mt-6">
+            <h3 class="section-title">Daftar Pekerjaan</h3>
+
+            <div class="rekap-box">
+                @if (empty($mitraTasks) || count($mitraTasks) === 0)
+                    <p style="color:red; font-weight:bold; text-align:center; padding:20px;">
+                        OSA BELUM MELAKUKAN INPUT PEKERJAAN, SILAHKAN HUBUNGI OSA TERKAIT
+                    </p>
+                @else
+                    <table class="mitra-table">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Kode</th>
+                                <th>Nama Pekerjaan</th>
+                                <th>Durasi Maksimal (Hari)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($mitraTasks as $i => $task)
+                                <tr>
+                                    <td>{{ $i + 1 }}</td>
+                                    <td>{{ $task->kode_task }}</td>
+                                    <td style="text-align:left">{{ $task->nama_pekerjaan }}</td>
+                                    <td style="text-align:center">{{ floor($task->time_expected) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
+        </div>
+
 
         <!-- Modal Zoom Foto -->
         <div id="imageZoomModal" class="zoom-modal">
@@ -720,21 +690,6 @@
                 margin-bottom: 20px;
             }
 
-            /* .btn-add,
-                                                                                            .btn-remove {
-                                                                                                display: flex;
-                                                                                                justify-content: center;
-                                                                                                align-items: center;
-                                                                                                font-weight: bold;
-                                                                                                font-size: 16px;
-                                                                                                border-radius: 50%;
-                                                                                                width: 36px;
-                                                                                                height: 36px;
-                                                                                                cursor: pointer;
-                                                                                                border: none;
-                                                                                                transition: 0.2s;
-                                                                                            } */
-
             .btn-add {
                 background: #133995;
                 color: #fff;
@@ -904,6 +859,58 @@
                 font-size: 40px;
                 color: #fff;
                 cursor: pointer;
+            }
+
+            /* PERT */
+            .mitra-table {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+                /* kolom konsisten */
+                font-size: 15px;
+            }
+
+            .mitra-table thead {
+                background: #133995;
+                color: #fff;
+                text-align: center;
+            }
+
+            .mitra-table th,
+            .mitra-table td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                vertical-align: middle;
+                word-wrap: break-word;
+            }
+
+            /* Kolom No */
+            .mitra-table th:nth-child(1),
+            .mitra-table td:nth-child(1) {
+                width: 60px;
+                text-align: center;
+            }
+
+            /* Kolom Kode */
+            .mitra-table th:nth-child(2),
+            .mitra-table td:nth-child(2) {
+                width: 100px;
+                text-align: center;
+            }
+
+            /* Kolom Nama Pekerjaan */
+            .mitra-table td:nth-child(3) {
+                width: 300px;
+                text-align: left;
+                /* isi rata kiri */
+            }
+
+            /* Kolom Durasi */
+            .mitra-table th:nth-child(4),
+            .mitra-table td:nth-child(4) {
+                width: 180px;
+                text-align: center;
+                /* isi rata tengah */
             }
         </style>
 

@@ -89,7 +89,7 @@ Route::prefix('superadmin')->group(function () {
     Route::post('/acc/{id}/kerjakan', [AccController::class, 'kerjakan'])->name('superadmin.acc.kerjakan');
     /* =========================
     ROUTE PERT
-    ========================= */    
+    ========================= */
     Route::post('/acc/{id}/pert/store', [AccController::class, 'storePert'])
         ->name('superadmin.pert.store');
     Route::post('/acc/{id}/done', [AccController::class, 'storeFoto'])->name('superadmin.acc.storeFoto');
@@ -105,6 +105,8 @@ Route::prefix('superadmin')->group(function () {
         ->name('superadmin.reject_destroy_project');
     Route::post('/reject/{id}/upload-revisi', [RejectController::class, 'updateRevisi'])
         ->name('superadmin.reject_upload_revisi');
+    Route::post('/superadmin/acc/{id}/send-to-mitra', [AccController::class, 'sendToMitra'])
+        ->name('superadmin.acc_sendToMitra');
 });
 
 // Telkom Akses

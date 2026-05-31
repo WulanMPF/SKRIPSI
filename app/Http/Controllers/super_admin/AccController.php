@@ -17,6 +17,7 @@ use App\Models\PertInput;
 use App\Models\PertResult;
 use App\Models\PertPath;
 use App\Models\PertMasterDependency;
+use App\Models\PertMitraTask;
 
 class AccController extends Controller
 {
@@ -542,6 +543,7 @@ class AccController extends Controller
                 'pertResult'      => $pertResult,
                 'criticalPath'    => $criticalPath,
                 'allModels'       => $allModels,
+                'id_result'       => $pertResult[0]['id_result'] ?? null,
             ],
 
             'totals' => $totals,
@@ -1161,15 +1163,11 @@ class AccController extends Controller
         // =========================
         // 6. SIMPAN + HITUNG
         // =========================
-        $minDurasi = null;
+        $maxDurasi = null;
         $criticalId = null;
 
-        // dd($paths);
-
         foreach ($paths as $path) {
-
             $durasi = 0;
-
             foreach ($path as $taskId) {
                 $durasi += $expectedMap[$taskId] ?? 0;
             }
@@ -1183,7 +1181,6 @@ class AccController extends Controller
 
             // simpan ke pert_path
             foreach ($path as $i => $taskId) {
-
                 PertPath::create([
                     'id_result' => $result->id_result,
                     'id_master' => $taskId,
@@ -1191,19 +1188,12 @@ class AccController extends Controller
                 ]);
             }
 
-            // cek max
-            // if ($midurasi > $maxDurasi) {
-            //     $maxDurasi = $durasi;
-            //     $criticalId = $result->id_result;
-            // }
-
-            // cek min
-            if ($minDurasi === null || $durasi < $minDurasi) {
-                $minDurasi = $durasi;
+            // cek max (durasi paling lama)
+            if ($maxDurasi === null || $durasi > $maxDurasi) {
+                $maxDurasi = $durasi;
                 $criticalId = $result->id_result;
             }
         }
-
 
         // =========================
         // 7. SET CRITICAL PATH
@@ -1213,100 +1203,6 @@ class AccController extends Controller
                 ->update(['is_critical' => 1]);
         }
     }
-
-    // GENERATE MODEL PATH (BEFORE-AFTER)
-    // private function generatePertModel($projectId)
-    // {
-    //     // 1. HAPUS DATA LAMA
-    //     PertResult::where('project_id', $projectId)->delete();
-
-    //     // 2. AMBIL INPUT
-    //     $inputs = PertInput::with('masterTask')
-    //         ->where('project_id', $projectId)
-    //         ->get();
-
-    //     // dump($inputs);
-
-    //     $expectedMap = [];
-
-    //     foreach ($inputs as $input) {
-    //         $expectedMap[$input->masterTask->kode] = $input->time_expected;
-    //     }
-
-    //     // dump($expectedMap);
-
-    //     // 3. AMBIL DEPENDENCY DARI DATABASE
-    //     $dependencies = PertMasterDependency::all();
-
-    //     // mapping: parent -> children
-    //     $graph = [];
-
-    //     foreach ($dependencies as $dep) {
-    //         $parent = $dep->ketergantungan; // sebelumnya
-    //         $child  = $dep->id_master;      // sesudahnya
-
-    //         if ($parent !== null) {
-    //             $graph[$parent][] = $child;
-    //         }
-    //     }
-
-    //     // 4. CARI START NODE (yang tidak punya dependency)
-    //     $allTasks = PertMasterTask::pluck('id_master')->toArray();
-    //     $hasParent = $dependencies->pluck('id_master')->toArray();
-
-    //     $startNodes = [];
-
-    //     foreach ($allTasks as $task) {
-    //         $isStart = true;
-
-    //         foreach ($dependencies as $dep) {
-    //             if ($dep->id_master == $task && $dep->ketergantungan !== null) {
-    //                 $isStart = false;
-    //                 break;
-    //             }
-    //         }
-
-    //         if ($isStart) {
-    //             $startNodes[] = $task;
-    //         }
-    //     }
-
-    //     // 5. TRACING PATH (BUKAN DFS, TAPI RUNUT)
-    //     $paths = [];
-
-    //     function buildPath($current, $graph, $path = [])
-    //     {
-    //         $path[] = $current;
-
-    //         if (!isset($graph[$current])) {
-    //             return [$path]; // end node
-    //         }
-
-    //         $allPaths = [];
-
-    //         foreach ($graph[$current] as $next) {
-    //             $subPaths = buildPath($next, $graph, $path);
-
-    //             foreach ($subPaths as $sp) {
-    //                 $allPaths[] = $sp;
-    //             }
-    //         }
-
-    //         return $allPaths;
-    //     }
-
-    //     // generate semua path dari start node
-    //     foreach ($startNodes as $start) {
-    //         $paths = array_merge($paths, buildPath($start, $graph));
-    //     }
-
-    //     // DEBUG HASIL PATH
-    //     // dd([
-    //     //     'graph' => $graph,
-    //     //     'startNodes' => $startNodes,
-    //     //     'paths' => $paths
-    //     // ]);
-    // }
 
     private function getCriticalPath($projectId)
     {
@@ -1337,6 +1233,82 @@ class AccController extends Controller
         // dd($paths->map(function ($item) {
         //     return optional($item->masterTask)->kode;
         // }));
+    }
+
+    public function getPertPathDetail($resultId)
+    {
+        $result = PertResult::with('paths.masterTask')->findOrFail($resultId);
+
+        $paths = $result->paths->sortBy('urutan')->values();
+        $pathIds = $paths->pluck('id_master')->toArray();
+
+        // tentukan range QE project
+        $qeSnapshot = $result->project->qe->snapshot();
+        $qeType = strtolower(trim($qeSnapshot->data()['type'] ?? ''));
+
+        if (str_contains($qeType, 'material')) {
+            $range = [1, 15];
+        } elseif (str_contains($qeType, 'preventive')) {
+            $range = [16, 29];
+        } elseif (str_contains($qeType, 'relokasi')) {
+            $range = [30, 44];
+        } elseif (str_contains($qeType, 'recovery')) {
+            $range = [45, 60];
+        } else {
+            $range = [1, 60];
+        }
+
+        // pekerjaan yang tidak masuk path
+        $excluded = PertMasterTask::whereBetween('id_master', $range)
+            ->whereNotIn('id_master', $pathIds)
+            ->get();
+
+        return response()->json([
+            'pathTasks' => $paths,
+            'excludedTasks' => $excluded,
+        ]);
+    }
+
+    public function sendToMitra(Request $request, $resultId)
+    {
+        // 1. Ambil project_id dari model yang dipilih
+        $projectId = PertResult::where('id_result', $resultId)->value('project_id');
+
+        // 2. Reset semua model di project jadi tidak dipilih
+        PertResult::where('project_id', $projectId)->update(['is_selected' => 0]);
+
+        // 3. Tandai model yang benar sebagai dipilih
+        PertResult::where('id_result', $resultId)->update(['is_selected' => 1]);
+
+        // 4. Hapus semua data pert_mitra_task lama untuk project ini
+        PertMitraTask::where('project_id', $projectId)->delete();
+
+        // 5. Ambil kode task dari path model ini
+        $selectedCodes = PertPath::join('pert_master_task', 'pert_path.id_master', '=', 'pert_master_task.id_master')
+            ->where('pert_path.id_result', $resultId)
+            ->pluck('pert_master_task.kode')
+            ->toArray();
+
+        // 6. Ambil detail task dari pert_input
+        $tasks = PertInput::join('pert_master_task', 'pert_input.id_master', '=', 'pert_master_task.id_master')
+            ->where('pert_input.project_id', $projectId)
+            ->whereIn('pert_master_task.kode', $selectedCodes)
+            ->get(['pert_master_task.kode', 'pert_master_task.nama_pekerjaan', 'pert_input.time_expected']);
+
+        // 7. Simpan data baru ke pert_mitra_task
+        foreach ($tasks as $task) {
+            PertMitraTask::create([
+                'id_result'      => $resultId,
+                'project_id'     => $projectId,
+                'kode_task'      => $task->kode,
+                'nama_pekerjaan' => $task->nama_pekerjaan,
+                'time_expected'  => $task->time_expected,
+                'created_at'     => now(),
+            ]);
+        }
+
+        return redirect()->route('superadmin.acc_detail', $projectId)
+            ->with('success', 'Model berhasil dikirim ke mitra. Data lama diganti dengan data baru.');
     }
 }
 // ===================== //

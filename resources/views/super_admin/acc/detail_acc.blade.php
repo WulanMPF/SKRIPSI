@@ -171,7 +171,7 @@
                                 <th>No</th>
                                 <th>Designator</th>
                                 <th>Uraian</th>
-                                <th>Foto Sebelum</th>
+                                <th>Foto Proses</th>
                                 <th>Foto Sesudah</th>
                             </tr>
                         </thead>
@@ -214,7 +214,8 @@
 
     <!-- Pop Up Pending -->
     <div id="pendingModal" class="modal" style="display:none;">
-        <div class="modal-content">
+        <div class="modal-content"
+            style="max-width:1200px; max-height:80vh; overflow-y:auto; padding:20px; border-radius:10px; background:#fff;">
             <h3 style="text-align:center; color:#133995; font-weight:600;">Input Worklog</h3>
             <p style="text-align:center; font-size:14px; color:#595961; margin-bottom:20px;">
                 Silahkan tulis keterangan mengapa project pending
@@ -427,38 +428,119 @@
         <div class="rekap-section mt-6">
             <h3 class="section-title">Semua Jalur PERT</h3>
 
-            <div class="rekap-box">
 
+            <div class="rekap-box">
                 @foreach ($acc['allModels'] as $i => $model)
-                    <div
-                        style="
-                    margin-bottom:15px;
-                    padding:15px;
-                    border-radius:10px;
-                    background: {{ $model->is_critical ? '#ffe5e5' : '#f5f7fa' }};
-                    border: 2px solid {{ $model->is_critical ? '#ff4d4d' : '#ddd' }};
-                ">
+                    <div class="model-item" data-model="{{ $i }}"
+                        style="cursor:pointer;
+        margin-bottom:15px;
+        padding:15px;
+        border-radius:10px;
+        background: {{ $model->is_critical ? '#ffe5e5' : '#f5f7fa' }};
+        border: 2px solid {{ $model->is_critical ? '#ff4d4d' : '#ddd' }};">
 
                         <b>Model {{ $i + 1 }}</b>
-
                         @if ($model->is_critical)
                             <span style="color:red;">(CRITICAL PATH)</span>
                         @endif
 
-                        <br><br>
+                        {{-- Tambahkan tanda dikirim ke mitra di sini --}}
+                        @if ($model->is_selected)
+                            <span style="color:green; font-weight:bold; margin-left:10px;">
+                                ✅ Dikirim ke Mitra
+                            </span>
+                        @endif
 
+                        <br><br>
                         @foreach ($model->paths->sortBy('urutan') as $p)
                             {{ $p->masterTask->kode ?? '-' }}
                             @if (!$loop->last)
                                 →
                             @endif
                         @endforeach
-
                         <br><br>
                         <b>Durasi:</b> {{ number_format($model->tot_durasi, 2) }} hari
                     </div>
-                @endforeach
 
+                    <!-- Modal khusus untuk model ini -->
+                    <div id="modelDetailModal{{ $i }}" class="modal" style="display:none;">
+                        <div class="modal-content">
+                            <h3 style="text-align:center;color:#133995;">Detail Model {{ $i + 1 }}</h3>
+
+                            <h4>Daftar Pekerjaan Dilakukan</h4>
+                            <table class="pending-table">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>Kode</th>
+                                        <th>Nama Pekerjaan</th>
+                                        <th>Durasi Maksimal (Hari)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($acc['pertTasks'] as $i => $task)
+                                        <tr>
+                                            <td>{{ $i + 1 }}</td>
+                                            <td>{{ $task['kode'] }}</td>
+                                            <td style="text-align:left">
+                                                {{ $task['nama_pekerjaan'] }}
+                                            </td>
+                                            <td style="text-align:center !important">
+                                                {{ floor($task['time_expected'] ?? 0) }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+
+                            <h4>Daftar Pekerjaan Dihilangkan</h4>
+                            <table class="pending-table">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>Kode</th>
+                                        <th>Nama Pekerjaan</th>
+                                        <th>Durasi Maksimal (Hari)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @php
+                                        // Ambil semua kode pekerjaan yang masuk ke path model ini
+                                        $selectedCodes = $model->paths->pluck('masterTask.kode')->toArray();
+
+                                        // Filter pekerjaan yang tidak masuk ke path terpilih
+                                        $removedTasks = collect($acc['pertTasks'])
+                                            ->filter(fn($t) => !in_array($t['kode'], $selectedCodes))
+                                            ->values(); // reset index agar mulai dari 0
+                                    @endphp
+
+                                    @foreach ($removedTasks as $j => $task)
+                                        <tr>
+                                            <td>{{ $j + 1 }}</td> <!-- nomor berurutan 1,2,3,... -->
+                                            <td>{{ $task['kode'] }}</td>
+                                            <td>{{ $task['nama_pekerjaan'] }}</td>
+                                            <td style="text-align:center !important">
+                                                {{ floor($task['time_expected'] ?? 0) }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
+
+                                </tbody>
+                            </table>
+
+                            <div style="margin-top:20px; text-align:right;">
+                                <form action="{{ route('superadmin.acc_sendToMitra', $model->id_result) }}"
+                                    method="POST">
+                                    @csrf
+                                    <button type="submit" class="modal-btn upload">
+                                        Send to Mitra
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+                    </div>
+                @endforeach
             </div>
         </div>
     @endif
@@ -1000,8 +1082,76 @@
             text-align: center;
         }
 
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .modal-content {
+            width: 90%;
+            /* modal isi 90% dari layar */
+            max-width: 1500px;
+            /* batas maksimal */
+            max-height: 80vh;
+            /* biar tidak terlalu tinggi */
+            overflow-y: auto;
+            /* scroll vertikal kalau konten panjang */
+            background: #fff;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        /* Tabel PERT */
         .pending-table {
+            width: 100%;
             font-size: 15px;
+            border-collapse: collapse;
+            /* table-layout: fixed; */
+            /* kolom konsisten */
+        }
+
+        .pending-table th,
+        .pending-table td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+            word-wrap: break-word;
+            vertical-align: middle;
+        }
+
+        /* Atur lebar kolom */
+        .pending-table th:nth-child(1),
+        .pending-table td:nth-child(1) {
+            width: 60px;
+            /* No */
+        }
+
+        .pending-table th:nth-child(2),
+        .pending-table td:nth-child(2) {
+            width: 100px;
+            /* Kode */
+        }
+
+        .pending-table td:nth-child(3) {
+            width: 300px;
+            /* Nama Pekerjaan */
+            text-align: left;
+            /* kalau mau rata tengah */
+        }
+
+        .pending-table th:nth-child(4),
+        .pending-table td:nth-child(4) {
+            width: 180px;
+            /* Durasi */
+            text-align: center;
         }
     </style>
 
@@ -1254,6 +1404,27 @@
 
                 });
             }
+
+            // Buka modal sesuai card yang diklik
+            document.querySelectorAll('.model-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const modelId = this.dataset.model; // ambil index dari data-model
+                    const modal = document.getElementById('modelDetailModal' + modelId);
+                    if (modal) {
+                        modal.style.display = 'flex';
+                    }
+                });
+            });
+
+            // Tutup modal jika klik tombol close atau area luar
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('modal')) {
+                        modal.style.display = 'none';
+                    }
+                });
+            });
+
         });
 
         function previewImage(input) {

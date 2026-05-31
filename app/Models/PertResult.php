@@ -21,4 +21,9 @@ class PertResult extends Model
     {
         return $this->hasMany(PertPath::class, 'id_result');
     }
+
+    public function mitraTasks()
+    {
+        return $this->hasMany(PertMitraTask::class, 'id_result', 'id_result');
+    }
 }
